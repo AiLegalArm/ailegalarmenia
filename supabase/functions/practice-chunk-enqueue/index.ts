@@ -58,22 +58,18 @@ serve(async (req) => {
     // ─── Diagnostics ─────────────────────────────────────────
     if (action === "diagnostics") {
       if (source === "knowledge_base") {
-        const [totalDocsRes, totalChunksRes, embPendingRes, embFailedRes] = await Promise.all([
+        const [totalDocsRes, totalChunksRes, embPendingRes, embFailedRes, docsNoChunksRes, avgChunksRes] = await Promise.all([
           supabase.from("knowledge_base").select("id", { count: "exact", head: true }).eq("is_active", true),
           supabase.from("knowledge_base_chunks").select("id", { count: "exact", head: true }),
           supabase.from("knowledge_base").select("id", { count: "exact", head: true }).eq("is_active", true).eq("embedding_status", "pending"),
           supabase.from("knowledge_base").select("id", { count: "exact", head: true }).eq("is_active", true).eq("embedding_status", "failed"),
+          supabase.rpc("count_kb_docs_without_chunks"),
+          supabase.rpc("avg_chunks_per_kb_doc"),
         ]);
 
-        // Count docs with at least one chunk
-        const { data: docsWithChunks } = await supabase
-          .from("knowledge_base_chunks")
-          .select("kb_id")
-          .limit(100000);
-        const uniqueDocIds = new Set((docsWithChunks || []).map((r: { kb_id: string }) => r.kb_id));
         const totalDocs = totalDocsRes.count || 0;
-        const docsWithoutChunks = totalDocs - uniqueDocIds.size;
-        const avgChunks = uniqueDocIds.size > 0 ? (totalChunksRes.count || 0) / uniqueDocIds.size : 0;
+        const docsWithoutChunks = typeof docsNoChunksRes.data === "number" ? docsNoChunksRes.data : null;
+        const avgChunks = typeof avgChunksRes.data === "number" ? avgChunksRes.data : null;
 
         // Job queue stats for KB
         const [pendingJobs, processingJobs, doneJobs, failedJobs, deadJobs] = await Promise.all([
@@ -88,7 +84,7 @@ serve(async (req) => {
           total_docs: totalDocs,
           total_chunks: totalChunksRes.count || 0,
           docs_without_chunks: docsWithoutChunks,
-          avg_chunks_per_doc: Math.round(avgChunks * 10) / 10,
+          avg_chunks_per_doc: avgChunks,
           embedding_pending: embPendingRes.count || 0,
           embedding_failed: embFailedRes.count || 0,
           jobs: {
@@ -144,23 +140,14 @@ serve(async (req) => {
       let docIds: string[] = [];
 
       if (source === "knowledge_base") {
-        // Get all active KB doc IDs
-        const { data: allDocs } = await supabase
-          .from("knowledge_base")
-          .select("id")
-          .eq("is_active", true);
+        const { data: missingDocs, error: queryErr } = await supabase
+          .rpc("get_kb_docs_without_chunks", { batch_limit: 2000 });
 
-        // Get all doc IDs that already have chunks
-        const { data: chunkedDocs } = await supabase
-          .from("knowledge_base_chunks")
-          .select("kb_id")
-          .limit(100000);
-
-        if (allDocs && chunkedDocs) {
-          const chunkedSet = new Set(chunkedDocs.map((c: { kb_id: string }) => c.kb_id));
-          docIds = allDocs
-            .filter((d: { id: string }) => !chunkedSet.has(d.id))
-            .map((d: { id: string }) => d.id);
+        if (queryErr || !missingDocs) {
+          console.error("[practice-chunk-enqueue] RPC error:", queryErr?.message);
+          docIds = [];
+        } else {
+          docIds = missingDocs.map((d: { id: string }) => d.id);
         }
       } else {
         // legal_practice_kb - existing logic
