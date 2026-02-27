@@ -14,6 +14,7 @@ import {
   FileCode2,
   AlertTriangle,
   BookOpenText,
+  ArrowRightLeft,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminKnowledgeBaseTab } from "@/components/admin/AdminKnowledgeBaseTab";
@@ -29,6 +30,7 @@ import { ErrorLogs } from "@/components/admin/ErrorLogs";
 import { DictionaryImport } from "@/components/admin/DictionaryImport";
 import { AIProviderSwitch } from "@/components/admin/AIProviderSwitch";
 import { AdminAIChatBot } from "@/components/admin/AdminAIChatBot";
+import { DataMigration } from "@/components/admin/DataMigration";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -104,6 +106,10 @@ const AdminPanel = () => {
             <TabsTrigger value="dictionary" className="gap-1.5 px-2 py-1.5 text-xs sm:px-3 sm:text-sm">
               <BookOpenText className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">{'\u0532\u0561\u057c\u0561\u0580\u0561\u0576'}</span>
+            </TabsTrigger>
+            <TabsTrigger value="migration" className="gap-1.5 px-2 py-1.5 text-xs sm:px-3 sm:text-sm">
+              <ArrowRightLeft className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Миграция</span>
             </TabsTrigger>
           </TabsList>
 

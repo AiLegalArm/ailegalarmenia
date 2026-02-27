@@ -89,3 +89,5 @@ verify_jwt = false
 [functions.dictionary-import-run]
 
 [functions.admin-ai-chat]
+
+[functions.export-data]
