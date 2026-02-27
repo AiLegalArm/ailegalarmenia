@@ -50,15 +50,36 @@ export function DataMigration() {
 
     try {
       const { data, error } = await supabase.functions.invoke("export-data", {
-        body: { tables: selectedTables, format: "sql" },
+        body: { tables: selectedTables },
       });
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
 
-      setSqlOutput(data.sql || "");
-      setStats(data.tables || {});
-      toast.success(`Экспорт завершён: ${data.total} записей`);
+      // Response is now plain text (streamed SQL)
+      let text: string;
+      if (typeof data === "string") {
+        text = data;
+      } else if (data instanceof Blob) {
+        text = await data.text();
+      } else if (data?.error) {
+        throw new Error(data.error);
+      } else {
+        text = JSON.stringify(data);
+      }
+
+      setSqlOutput(text);
+
+      // Parse stats from comment lines like "-- table_name: 123 records exported"
+      const statsMap: Record<string, number> = {};
+      const re = /^-- (\w+): (\d+) records exported$/gm;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        statsMap[m[1]] = parseInt(m[2], 10);
+      }
+      if (Object.keys(statsMap).length > 0) setStats(statsMap);
+
+      const total = Object.values(statsMap).reduce((s, n) => s + n, 0);
+      toast.success(`Экспорт завершён: ${total} записей`);
     } catch (err) {
       console.error("Export error:", err);
       toast.error(`Ошибка экспорта: ${err instanceof Error ? err.message : "Unknown"}`);
