@@ -77,6 +77,10 @@ async function getEmbeddings(texts: string[], dimensions = EMBEDDING_DIMENSIONS)
       if (res.status === 401 || res.status === 403) {
         throw new FatalOpenAIError(res.status, `OpenAI auth error ${res.status}: ${errText.substring(0, 200)}`);
       }
+      // 400 with token-limit message → fatal, do not retry
+      if (res.status === 400 && /token|too long|maximum context/i.test(errText)) {
+        throw new FatalOpenAIError(400, `OpenAI token limit exceeded: ${errText.substring(0, 200)}`);
+      }
       // 429/5xx = retryable
       throw new Error(`OpenAI embeddings error ${res.status}: ${errText.substring(0, 200)}`);
     }

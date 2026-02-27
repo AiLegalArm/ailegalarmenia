@@ -67,6 +67,8 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (err) {
+      // Non-retryable errors (token limit) → throw immediately
+      if (err && typeof err === "object" && "nonRetryable" in err && (err as { nonRetryable: boolean }).nonRetryable) throw err;
       lastError = err;
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, delayMs * Math.pow(2, attempt)));
@@ -103,6 +105,12 @@ async function callOpenAIEmbeddings(
 
     if (!res.ok) {
       const errText = await res.text();
+      // 400 with token-limit message → do not retry (text too long)
+      if (res.status === 400 && /token|too long|maximum context/i.test(errText)) {
+        const err = new Error(`OpenAI token limit exceeded (400): ${errText.substring(0, 200)}`);
+        (err as Error & { nonRetryable: boolean }).nonRetryable = true;
+        throw err;
+      }
       throw new Error(`OpenAI embeddings error ${res.status}: ${errText}`);
     }
 
