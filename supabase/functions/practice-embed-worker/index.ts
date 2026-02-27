@@ -22,6 +22,7 @@ async function sha256Hex(text: string): Promise<string> {
 
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
+const LEGACY_EMBEDDING_DIMENSIONS = 768;
 const MAX_CHARS_PER_TEXT = 12000;
 const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 25;
@@ -51,7 +52,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs
   throw lastError;
 }
 
-async function getEmbeddings(texts: string[]): Promise<number[][]> {
+async function getEmbeddings(texts: string[], dimensions = EMBEDDING_DIMENSIONS): Promise<number[][]> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new FatalOpenAIError(500, "OPENAI_API_KEY not configured");
 
@@ -67,7 +68,7 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
       body: JSON.stringify({
         model: EMBEDDING_MODEL,
         input: truncated,
-        dimensions: EMBEDDING_DIMENSIONS,
+        dimensions,
       }),
     });
     if (!res.ok) {
@@ -226,10 +227,10 @@ serve(async (req) => {
           continue;
         }
 
-        const [embedding] = await getEmbeddings([embeddingText]);
-        const vectorStr = `[${embedding.join(",")}]`;
+        let [embedding] = await getEmbeddings([embeddingText], EMBEDDING_DIMENSIONS);
+        let vectorStr = `[${embedding.join(",")}]`;
 
-        const { error: updateErr } = await supabase
+        let { error: updateErr } = await supabase
           .from(src)
           .update({
             embedding: vectorStr,
@@ -240,6 +241,24 @@ serve(async (req) => {
             content_hash: hash,
           })
           .eq("id", job.document_id);
+
+        if (updateErr && /different vector dimensions|vector dimensions/i.test(updateErr.message || "")) {
+          console.warn(`[embed-worker] dimension mismatch on table=${src}; retry with ${LEGACY_EMBEDDING_DIMENSIONS} dims`);
+          [embedding] = await getEmbeddings([embeddingText], LEGACY_EMBEDDING_DIMENSIONS);
+          vectorStr = `[${embedding.join(",")}]`;
+
+          ({ error: updateErr } = await supabase
+            .from(src)
+            .update({
+              embedding: vectorStr,
+              embedding_status: "success",
+              embedding_attempts: attempt,
+              embedding_last_attempt: new Date().toISOString(),
+              embedding_error: null,
+              content_hash: hash,
+            })
+            .eq("id", job.document_id));
+        }
 
         if (updateErr) throw new Error(`Update failed: ${updateErr.message}`);
 
