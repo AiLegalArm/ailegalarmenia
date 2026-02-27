@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,32 +39,50 @@ function PipelineStatus() {
   const [stats, setStats] = useState<PipelineStats | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      // Use the orchestrator diagnostics via invoke
-      const { data, error } = await supabase.functions.invoke("practice-chunk-enqueue", {
-        body: { action: "diagnostics", source_table: "knowledge_base" },
-      });
-      const { data: data2 } = await supabase.functions.invoke("practice-chunk-enqueue", {
-        body: { action: "diagnostics", source_table: "legal_practice_kb" },
-      });
-      // Combine job stats from both sources
-      const jobs1 = data?.jobs || {};
-      const jobs2 = data2?.jobs || {};
+      const [kbRes, practiceRes] = await Promise.all([
+        supabase.functions.invoke("practice-chunk-enqueue", {
+          body: { action: "diagnostics", source_table: "knowledge_base" },
+        }),
+        supabase.functions.invoke("practice-chunk-enqueue", {
+          body: { action: "diagnostics", source_table: "legal_practice_kb" },
+        }),
+      ]);
+
+      const kbData = kbRes.data;
+      const practiceData = practiceRes.data;
+
+      const kbPipeline = kbData?.pipeline;
+      const practicePipeline = practiceData?.pipeline;
+
       setStats({
-        chunk_pending: (jobs1.pending || 0) + (jobs2.pending || 0),
-        embed_pending: (data?.embedding_pending || 0) + (data2?.embedding_pending || 0),
-        enrich_pending: 0, // Will show from pipeline
+        chunk_pending:
+          (kbPipeline?.chunk_pending ?? kbData?.jobs?.pending ?? 0) +
+          (practicePipeline?.chunk_pending ?? practiceData?.jobs?.pending ?? 0),
+        embed_pending:
+          (kbPipeline?.embed_pending ?? kbData?.embedding_pending ?? 0) +
+          (practicePipeline?.embed_pending ?? practiceData?.embedding_pending ?? 0),
+        enrich_pending:
+          (kbPipeline?.enrich_pending ?? 0) +
+          (practicePipeline?.enrich_pending ?? 0),
       });
     } catch {
       // Silently fail
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => {
+    void loadStats();
+    const intervalId = window.setInterval(() => {
+      void loadStats();
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadStats]);
 
   const isIdle = stats && stats.chunk_pending === 0 && stats.embed_pending === 0 && stats.enrich_pending === 0;
   const activeStage = stats

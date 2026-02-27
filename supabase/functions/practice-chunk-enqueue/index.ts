@@ -72,12 +72,36 @@ serve(async (req) => {
         const avgChunks = typeof avgChunksRes.data === "number" ? avgChunksRes.data : null;
 
         // Job queue stats for KB
-        const [pendingJobs, processingJobs, doneJobs, failedJobs, deadJobs] = await Promise.all([
+        const [
+          pendingJobs,
+          processingJobs,
+          doneJobs,
+          failedJobs,
+          deadJobs,
+          chunkPendingJobs,
+          chunkProcessingJobs,
+          chunkFailedJobs,
+          embedPendingJobs,
+          embedProcessingJobs,
+          embedFailedJobs,
+          enrichPendingJobs,
+          enrichProcessingJobs,
+          enrichFailedJobs,
+        ] = await Promise.all([
           supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "pending").eq("source_table", "knowledge_base"),
           supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "processing").eq("source_table", "knowledge_base"),
           supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "done").eq("source_table", "knowledge_base"),
           supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "failed").eq("source_table", "knowledge_base"),
           supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "dead_letter").eq("source_table", "knowledge_base"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "chunk").eq("status", "pending"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "chunk").eq("status", "processing"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "chunk").eq("status", "failed"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "embed").eq("status", "pending"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "embed").eq("status", "processing"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "embed").eq("status", "failed"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "enrich").eq("status", "pending"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "enrich").eq("status", "processing"),
+          supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "knowledge_base").eq("job_type", "enrich").eq("status", "failed"),
         ]);
 
         return new Response(JSON.stringify({
@@ -93,6 +117,11 @@ serve(async (req) => {
             done: doneJobs.count || 0,
             failed: failedJobs.count || 0,
             dead_letter: deadJobs.count || 0,
+          },
+          pipeline: {
+            chunk_pending: (chunkPendingJobs.count || 0) + (chunkProcessingJobs.count || 0) + (chunkFailedJobs.count || 0),
+            embed_pending: (embedPendingJobs.count || 0) + (embedProcessingJobs.count || 0) + (embedFailedJobs.count || 0),
+            enrich_pending: (enrichPendingJobs.count || 0) + (enrichProcessingJobs.count || 0) + (enrichFailedJobs.count || 0),
           },
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -110,12 +139,36 @@ serve(async (req) => {
       const docsWithoutChunks = docsNoChunksRes.data;
       const avgChunks = avgChunksRes.data;
 
-      const [pendingJobs, processingJobs, doneJobs, failedJobs, deadJobs] = await Promise.all([
+      const [
+        pendingJobs,
+        processingJobs,
+        doneJobs,
+        failedJobs,
+        deadJobs,
+        chunkPendingJobs,
+        chunkProcessingJobs,
+        chunkFailedJobs,
+        embedPendingJobs,
+        embedProcessingJobs,
+        embedFailedJobs,
+        enrichPendingJobs,
+        enrichProcessingJobs,
+        enrichFailedJobs,
+      ] = await Promise.all([
         supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "pending").eq("source_table", "legal_practice_kb"),
         supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "processing").eq("source_table", "legal_practice_kb"),
         supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "done").eq("source_table", "legal_practice_kb"),
         supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "failed").eq("source_table", "legal_practice_kb"),
         supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("status", "dead_letter").eq("source_table", "legal_practice_kb"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "chunk").eq("status", "pending"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "chunk").eq("status", "processing"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "chunk").eq("status", "failed"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "embed").eq("status", "pending"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "embed").eq("status", "processing"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "embed").eq("status", "failed"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "enrich").eq("status", "pending"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "enrich").eq("status", "processing"),
+        supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true }).eq("source_table", "legal_practice_kb").eq("job_type", "enrich").eq("status", "failed"),
       ]);
 
       return new Response(JSON.stringify({
@@ -131,6 +184,11 @@ serve(async (req) => {
           done: doneJobs.count || 0,
           failed: failedJobs.count || 0,
           dead_letter: deadJobs.count || 0,
+        },
+        pipeline: {
+          chunk_pending: (chunkPendingJobs.count || 0) + (chunkProcessingJobs.count || 0) + (chunkFailedJobs.count || 0),
+          embed_pending: (embedPendingJobs.count || 0) + (embedProcessingJobs.count || 0) + (embedFailedJobs.count || 0),
+          enrich_pending: (enrichPendingJobs.count || 0) + (enrichProcessingJobs.count || 0) + (enrichFailedJobs.count || 0),
         },
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
