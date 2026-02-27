@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
-import { runBatchChunking } from '@/lib/batchChunking';
+
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -387,15 +387,9 @@ export function LegalPracticeBulkImport({ open, onOpenChange }: LegalPracticeBul
     setChunkingStatus('running');
     setChunkingProgress('');
     try {
-      const result = await runBatchChunking({
-        chunkSize: 8000,
-        batchLimit: 10,
-        onProgress: (p) => {
-          setChunkingProgress(`${p.processedDocs} docs / ${p.totalChunksInserted} chunks (${p.totalRemaining} remaining)`);
-        },
-      });
+      // Chunking is now handled automatically by the pipeline
       setChunkingStatus('done');
-      toast.success(t('lp_bi_chunk_success', { count: result.totalChunksInserted }));
+      toast.success(t('lp_bi_chunk_success', { count: 0 }) + ' (pipeline auto)');
     } catch (e) {
       setChunkingStatus('error');
       toast.error(t('lp_bi_chunk_fail'));

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
-import { runBatchChunking } from '@/lib/batchChunking';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -229,10 +229,7 @@ export function KBBulkImport({ open, onOpenChange, onSuccess }: KBBulkImportProp
     if (successCount > 0) {
       toast.success(`${t('document_uploaded')}: ${successCount} files, ${totalImported} articles`);
       onSuccess();
-      // Auto-chunking for KB (batch loop)
-      try {
-        await runBatchChunking({ chunkSize: 8000, batchLimit: 10 });
-      } catch { /* silent */ }
+      // Chunking is handled automatically by the pipeline
     }
   };
 
