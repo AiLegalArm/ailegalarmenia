@@ -11,6 +11,14 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors, validateInternalRequest } from "../_shared/edge-security.ts";
 import { buildEmbeddingText, type EmbeddingDoc } from "../_shared/build-embedding-text.ts";
+import { encode as hexEncode } from "https://deno.land/std@0.168.0/encoding/hex.ts";
+
+// ─── SHA-256 hash for idempotency ──────────────────────────────────────────
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return new TextDecoder().decode(hexEncode(new Uint8Array(hash)));
+}
 
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
@@ -92,6 +100,14 @@ const DOC_SELECT_FIELDS = [
   "legal_reasoning_summary", "outcome", "echr_article",
   "facts_hy", "judgment_hy", "procedural_aspect",
   "application_scope", "limitations_of_application",
+  "content_hash", "embedding",
+].join(", ");
+
+/** Minimal select for knowledge_base (fewer fields) */
+const KB_SELECT_FIELDS = [
+  "id", "title", "content_text", "category", "article_number",
+  "source_name", "version_date",
+  "content_hash", "embedding",
 ].join(", ");
 
 /** Minimal select for knowledge_base (fewer fields) */
@@ -195,6 +211,26 @@ serve(async (req) => {
 
         // Use unified embedding text builder
         const embeddingText = buildEmbeddingText(doc as EmbeddingDoc);
+        const hash = await sha256Hex(embeddingText);
+
+        // Idempotency: skip if content unchanged and embedding already exists
+        const hasEmbedding = doc.embedding !== null && doc.embedding !== undefined;
+        if (doc.content_hash === hash && hasEmbedding) {
+          // Mark job done without calling OpenAI
+          await supabase.from("practice_chunk_jobs").update({
+            status: "done", attempts: attempt, completed_at: new Date().toISOString(), last_error: null,
+          }).eq("id", job.id);
+          // Ensure embedding_status is success
+          await supabase.from(src).update({
+            embedding_status: "success",
+            embedding_last_attempt: new Date().toISOString(),
+            embedding_error: null,
+          }).eq("id", job.document_id);
+          processedOk++;
+          console.log(`[embed-worker] skip (idempotent): doc=${job.document_id} table=${src}`);
+          continue;
+        }
+
         const [embedding] = await getEmbeddings([embeddingText]);
         const vectorStr = `[${embedding.join(",")}]`;
 
@@ -206,6 +242,7 @@ serve(async (req) => {
             embedding_attempts: attempt,
             embedding_last_attempt: new Date().toISOString(),
             embedding_error: null,
+            content_hash: hash,
           })
           .eq("id", job.document_id);
 
