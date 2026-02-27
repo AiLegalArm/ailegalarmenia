@@ -297,16 +297,38 @@ serve(async (req) => {
     );
     const aiData = bypassResult.data;
 
-    const toolCall = (aiData.choices as Array<Record<string, unknown>>)?.[0] as Record<string, unknown> | undefined;
-    const message = toolCall?.message as Record<string, unknown> | undefined;
-    const tool_calls = message?.tool_calls as Array<Record<string, unknown>> | undefined;
-    const firstToolCall = tool_calls?.[0] as Record<string, unknown> | undefined;
+    // Try OpenAI-style tool_calls first
+    let extractedFields: Record<string, string> | null = null;
+
+    const choices = aiData.choices as Array<Record<string, unknown>> | undefined;
+    const message = (choices?.[0] as Record<string, unknown>)?.message as Record<string, unknown> | undefined;
+    const tool_calls_arr = message?.tool_calls as Array<Record<string, unknown>> | undefined;
+    const firstToolCall = tool_calls_arr?.[0] as Record<string, unknown> | undefined;
     const fnObj = firstToolCall?.function as Record<string, unknown> | undefined;
-    if (!fnObj || fnObj.name !== "extract_case_fields") {
-      throw new Error("Unexpected AI response format");
+
+    if (fnObj && fnObj.name === "extract_case_fields") {
+      extractedFields = JSON.parse(fnObj.arguments as string);
     }
 
-    const extractedFields = JSON.parse(fnObj.arguments as string);
+    // Fallback: Gemini may return content as plain text/JSON when tool_choice isn't honoured
+    if (!extractedFields && message?.content) {
+      const raw = (message.content as string).trim();
+      try {
+        // Strip markdown fences if present
+        const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (parsed && typeof parsed.case_number !== "undefined") {
+          extractedFields = parsed;
+        }
+      } catch {
+        console.warn("Could not parse AI content as JSON fallback");
+      }
+    }
+
+    if (!extractedFields) {
+      console.error("Unexpected AI response structure:", JSON.stringify(aiData).slice(0, 500));
+      throw new Error("Unexpected AI response format");
+    }
     console.log("Extracted fields:", extractedFields);
 
     const updateData: Record<string, unknown> = {
