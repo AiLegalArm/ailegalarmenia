@@ -15,15 +15,29 @@ import { buildEmbeddingText, type EmbeddingDoc } from "../_shared/build-embeddin
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const MAX_CHARS_PER_TEXT = 12000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 25;
+
+// ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────
+class FatalOpenAIError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "FatalOpenAIError";
+  }
+}
 
 async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs = 1000): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try { return await fn(); } catch (err) {
+      // Never retry fatal auth errors
+      if (err instanceof FatalOpenAIError) throw err;
       lastError = err;
-      if (attempt < retries) await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt)));
+      if (attempt < retries) {
+        const wait = delayMs * Math.pow(2, attempt);
+        console.log(`[embed-worker] retry attempt=${attempt + 1}/${retries} wait=${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+      }
     }
   }
   throw lastError;
@@ -31,7 +45,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs
 
 async function getEmbeddings(texts: string[]): Promise<number[][]> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
+  if (!apiKey) throw new FatalOpenAIError(500, "OPENAI_API_KEY not configured");
 
   const truncated = texts.map(t => t.substring(0, MAX_CHARS_PER_TEXT));
 
@@ -50,7 +64,12 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
     });
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`OpenAI embeddings error ${res.status}: ${errText}`);
+      // 401/403 = fatal, do not retry
+      if (res.status === 401 || res.status === 403) {
+        throw new FatalOpenAIError(res.status, `OpenAI auth error ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      // 429/5xx = retryable
+      throw new Error(`OpenAI embeddings error ${res.status}: ${errText.substring(0, 200)}`);
     }
     return res;
   });
@@ -91,6 +110,18 @@ serve(async (req) => {
   const authErr = validateInternalRequest(req, corsHeaders);
   if (authErr) return authErr;
 
+  // ── Fail-fast: no API key ────────────────────────────────────────────────
+  if (!Deno.env.get("OPENAI_API_KEY")) {
+    console.error("[embed-worker] OPENAI_API_KEY missing");
+    return new Response(
+      JSON.stringify({
+        error: "OPENAI_API_KEY not configured",
+        hint: "Add OPENAI_API_KEY secret in Lovable Cloud → Secrets",
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   const startTime = Date.now();
 
   try {
@@ -129,11 +160,22 @@ serve(async (req) => {
     let processedOk = 0;
     let processedFailed = 0;
     const errors: string[] = [];
+    let fatalHit = false;
 
     for (const job of jobs) {
+      // If we hit a fatal OpenAI error, mark remaining jobs as failed too
+      if (fatalHit) {
+        await supabase.from("practice_chunk_jobs").update({
+          status: "failed", last_error: "Aborted: fatal OpenAI auth error in batch",
+          lease_expires_at: null,
+        }).eq("id", job.id);
+        processedFailed++;
+        continue;
+      }
+
       const attempt = (job.attempts || 0) + 1;
       try {
-      const src = job.source_table || "knowledge_base";
+        const src = job.source_table || "knowledge_base";
 
         // Guard: chunk tables must never receive embeddings
         if (src.endsWith("_chunks")) {
@@ -175,10 +217,24 @@ serve(async (req) => {
         }).eq("id", job.id);
 
         processedOk++;
+        console.log(`[embed-worker] ok: doc=${job.document_id} table=${src} attempt=${attempt}`);
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : "Unknown error";
         errors.push(`${job.document_id}: ${errMsg}`);
         processedFailed++;
+
+        // Fatal OpenAI error → mark job failed, stop processing
+        if (e instanceof FatalOpenAIError) {
+          console.error(`[embed-worker] fatal: status=${e.status} doc=${job.document_id}`);
+          await supabase.from("practice_chunk_jobs").update({
+            status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
+            lease_expires_at: null,
+          }).eq("id", job.id);
+          fatalHit = true;
+          continue;
+        }
+
+        console.error(`[embed-worker] failed: doc=${job.document_id} attempt=${attempt}`);
 
         if (attempt >= (job.max_attempts || 5)) {
           await supabase.from("practice_chunk_jobs").update({
@@ -205,11 +261,12 @@ serve(async (req) => {
       .lt("attempts", 5);
 
     const duration = Date.now() - startTime;
-    console.log(`[embed-worker] picked=${jobs.length} ok=${processedOk} failed=${processedFailed} remaining=${remaining} duration=${duration}ms`);
+    console.log(`[embed-worker] done: picked=${jobs.length} ok=${processedOk} failed=${processedFailed} remaining=${remaining} duration=${duration}ms fatal=${fatalHit}`);
 
     return new Response(JSON.stringify({
       picked: jobs.length, processed_ok: processedOk, processed_failed: processedFailed,
       pending_remaining: remaining || 0, duration_ms: duration,
+      fatal: fatalHit || undefined,
       errors: errors.length > 0 ? errors : undefined,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
