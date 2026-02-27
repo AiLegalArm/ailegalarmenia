@@ -22,15 +22,8 @@ const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1_000;
 
-// ─── CORS ──────────────────────────────────────────────────────────────────
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-internal-key, " +
-    "x-supabase-client-platform, x-supabase-client-platform-version, " +
-    "x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// ─── CORS via centralized handler ──────────────────────────────────────────
+import { handleCors as _handleCorsEmbed } from "../_shared/edge-security.ts";
 
 // ─── Auth guard ────────────────────────────────────────────────────────────
 async function authenticate(req: Request): Promise<boolean> {

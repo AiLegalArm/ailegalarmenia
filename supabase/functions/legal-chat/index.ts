@@ -276,6 +276,33 @@ serve(async (req) => {
     // Search knowledge base + legal practice (RAG) — via shared module
     const referenceDate: string | null = (caseDate && typeof caseDate === "string") ? caseDate : null;
     const dateAssumed = !referenceDate;
+    const strictTemporal = !!(reqBody.strict_temporal);
+
+    // Temporal warning + strict mode
+    let temporalWarning: string | undefined;
+    if (dateAssumed) {
+      temporalWarning =
+        "⚠️ reference_date was not resolved. Legal norms may include versions outside the relevant timeframe.";
+      try {
+        await supabase.from("audit_logs").insert({
+          user_id: userId,
+          action: "temporal_reference_date_missing",
+          table_name: "cases",
+          details: { function: "legal-chat" },
+        });
+      } catch { /* silent */ }
+
+      if (strictTemporal) {
+        return new Response(
+          JSON.stringify({
+            error: "strict_temporal_violation",
+            message: "strict_temporal enabled but reference_date could not be resolved.",
+            temporal_warning: temporalWarning,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
     let kbContext = "";
     let practiceContext = "";
 
@@ -405,14 +432,14 @@ serve(async (req) => {
       );
     }
 
-    // Log API usage
+    // Log API usage — cost computed from streaming (usage unavailable, mark as null)
     try {
       await supabase.rpc("log_api_usage", {
         _service_type: "legal_chat",
         _model_name: streamResult.model_used,
         _tokens_used: null,
-        _estimated_cost: 0.003,
-        _metadata: { message_length: message.length, has_context: !!kbContext, has_practice: !!practiceContext, request_id: streamResult.request_id }
+        _estimated_cost: null,
+        _metadata: { message_length: message.length, has_context: !!kbContext, has_practice: !!practiceContext, request_id: streamResult.request_id, cost_note: "streaming_no_usage_data" }
       });
     } catch (logErr) {
       err(FN, "Failed to log API usage", logErr);

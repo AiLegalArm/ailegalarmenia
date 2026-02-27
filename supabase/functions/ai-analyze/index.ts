@@ -137,6 +137,7 @@ interface AnalysisRequest {
   referencesText?: string;
   oldLawText?: string;
   newLawText?: string;
+  strict_temporal?: boolean;
 }
 
 // formatPracticeResults and formatPracticeContext moved to _shared/rag-search.ts
@@ -171,7 +172,7 @@ serve(async (req) => {
     }
     // === END AUTH GUARD ===
 
-    const { role, moduleId, caseId, caseFacts, legalQuestion, advocateResponse, prosecutorResponse, judgeResponse, referencesText, oldLawText, newLawText } =
+    const { role, moduleId, caseId, caseFacts, legalQuestion, advocateResponse, prosecutorResponse, judgeResponse, referencesText, oldLawText, newLawText, strict_temporal: strictTemporal } =
       (await req.json()) as AnalysisRequest;
 
     // Validate role - support both legacy roles and new analysis types
@@ -223,6 +224,37 @@ serve(async (req) => {
       }
     } else {
       dateAssumed = true;
+    }
+
+    // Temporal warning + strict mode
+    let temporalWarning: string | undefined;
+    if (dateAssumed) {
+      temporalWarning =
+        "⚠️ reference_date was not resolved from case data. " +
+        "Legal norms may include versions outside the relevant timeframe. " +
+        "Set court_date on the case for accurate temporal filtering.";
+
+      // Log to audit_logs
+      try {
+        await supabase.from("audit_logs").insert({
+          user_id: user.id,
+          action: "temporal_reference_date_missing",
+          table_name: "cases",
+          record_id: caseId || null,
+          details: { function: "ai-analyze", role },
+        });
+      } catch { /* silent */ }
+
+      if (strictTemporal) {
+        return new Response(
+          JSON.stringify({
+            error: "strict_temporal_violation",
+            message: "strict_temporal is enabled but reference_date could not be resolved.",
+            temporal_warning: temporalWarning,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
     }
 
     if (caseFacts || legalQuestion) {
@@ -1059,6 +1091,7 @@ Please provide your professional legal analysis from your designated role perspe
         analysis: analysisText,
         sources: sourcesUsed,
         model_used: modelUsed,
+        ...(temporalWarning ? { temporal_warning: temporalWarning } : {}),
         validation: {
           citations_verified: citationsVerified,
           ...(missingIds.length > 0 ? { missing_ids: missingIds } : {}),
