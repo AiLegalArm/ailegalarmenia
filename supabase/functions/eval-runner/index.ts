@@ -560,7 +560,11 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("ANON_KEY") || "";
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!anonKey) {
+      err("eval-runner", "SUPABASE_ANON_KEY is not set");
+      return json({ error: "missing_env", detail: "SUPABASE_ANON_KEY required" }, 500);
+    }
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: cases, error: casesErr } = await supabase
@@ -656,12 +660,12 @@ serve(async (req) => {
           const callCount = (inputPayload._call_count as number) || 3;
           callResults = [];
           for (let i = 0; i < callCount; i++) {
-            const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, supabaseAnonKey, evalCase.target_function, inputPayload);
+            const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, anonKey, evalCase.target_function, inputPayload);
             callResults.push(result);
             log("eval-runner", `multi_call ${i + 1}/${callCount}`, { status: result.status, fn: evalCase.target_function });
           }
         } else {
-          const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, supabaseAnonKey, evalCase.target_function, inputPayload);
+          const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, anonKey, evalCase.target_function, inputPayload);
           callResults = [result];
         }
 
