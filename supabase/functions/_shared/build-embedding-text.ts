@@ -182,7 +182,7 @@ function extractDispositive(doc: EmbeddingDoc): string {
 
 // ── Body text construction by doc type ──────────────────────────────────────
 
-const MAX_BODY_CHARS = 9000;
+const MAX_BODY_CHARS = 4500; // leaves ~1500 chars for structured header fields within 6000 total
 
 function buildBodyText(doc: EmbeddingDoc, docType: DocType): string {
   const raw = doc.content_text || "";
