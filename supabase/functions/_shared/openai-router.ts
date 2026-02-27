@@ -157,6 +157,14 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     max_tokens: 0,
     description: "Embeddings (OpenAI)",
   },
+
+  // ── Admin utilities ─────────────────────────────────────────────────────
+  "admin-ai-chat": {
+    model: "openai/gpt-5",
+    temperature: 0.3,
+    max_tokens: 16000,
+    description: "Admin AI chat (GPT-5, streaming)",
+  },
 };
 
 /**

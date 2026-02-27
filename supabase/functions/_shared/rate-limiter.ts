@@ -53,6 +53,13 @@ export interface RateLimitResult {
  * @param functionName - For audit log context
  * @param corsHeaders - For error responses
  */
+/** AI functions that MUST fail-closed if limiter DB is unreachable */
+const AI_FUNCTIONS = new Set([
+  "ai-analyze", "legal-chat", "multi-agent-analyze",
+  "generate-document", "generate-complaint", "admin-ai-chat",
+  "analyze-files-for-complaint",
+]);
+
 export async function checkRateLimits(
   supabase: { from: (t: string) => unknown; rpc: (fn: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }> },
   userId: string,
@@ -174,8 +181,17 @@ export async function checkRateLimits(
 
     return { allowed: true };
   } catch (e) {
-    // Fail-open: if rate limiter itself fails, allow the request but log
-    warn("rate-limiter", "Rate limit check failed, allowing request", e);
+    // AI functions: fail-closed (deny). Non-AI: fail-open (allow).
+    if (AI_FUNCTIONS.has(functionName)) {
+      warn("rate-limiter", "Rate limit check failed, DENYING AI request (fail-closed)", e);
+      return {
+        allowed: false,
+        reason: "hourly_limit_exceeded",
+        message: "Service temporarily unavailable. Please try again later.",
+        status: 429,
+      };
+    }
+    warn("rate-limiter", "Rate limit check failed, allowing non-AI request", e);
     return { allowed: true };
   }
 }

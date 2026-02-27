@@ -443,24 +443,34 @@ serve(async (req) => {
       );
     }
 
-    // Log API usage — estimate input tokens for budget tracking (streaming has no usage metadata)
+    // Log API usage — bounded estimate for budget tracking (streaming has no usage metadata)
     const estimatedInputTokens = Math.ceil(
-      messages.reduce((sum, m) => sum + (m.content?.length || 0), 0) / 4
+      messages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0) / 4
     );
+    // Bounded output estimate: cap at model max_tokens to prevent unbounded drift
+    const OUTPUT_TOKEN_CAP = chatModelCfg.max_tokens; // from MODEL_MAP
+    const estimatedOutputTokens = OUTPUT_TOKEN_CAP; // worst-case bound
+    const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens;
     try {
       await supabase.rpc("log_api_usage", {
         _service_type: "legal_chat",
         _model_name: streamResult.model_used,
-        _tokens_used: estimatedInputTokens,
+        _tokens_used: estimatedTotalTokens,
         _estimated_cost: null,
         _metadata: {
           message_length: message.length,
           has_context: !!kbContext,
           has_practice: !!practiceContext,
           request_id: streamResult.request_id,
-          cost_note: "streaming_no_usage_data",
-          cost_unknown: true,
+          cost_estimated: true,
           input_tokens_estimated: true,
+          streaming_estimation: {
+            method: "chars/4",
+            bounded: true,
+            input_tokens_est: estimatedInputTokens,
+            output_tokens_est: estimatedOutputTokens,
+            output_cap: OUTPUT_TOKEN_CAP,
+          },
         },
       });
     } catch (logErr) {

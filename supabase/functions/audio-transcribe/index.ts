@@ -51,6 +51,30 @@ serve(async (req) => {
       });
     }
 
+    // === SSRF PROTECTION: Only allow Supabase Storage URLs ===
+    try {
+      const parsedUrl = new URL(audioUrl);
+      const supabaseOrigin = new URL(Deno.env.get("SUPABASE_URL")!).origin;
+
+      // Block IP literals, localhost, private ranges
+      const hostname = parsedUrl.hostname;
+      const isIpLiteral = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith("[");
+      const isLocal = hostname === "localhost" || hostname === "127.0.0.1" || hostname.endsWith(".local");
+
+      if (isIpLiteral || isLocal || parsedUrl.origin !== supabaseOrigin || !parsedUrl.pathname.startsWith("/storage/v1/object/")) {
+        return new Response(JSON.stringify({ error: "Invalid audio URL" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid audio URL" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // === END SSRF PROTECTION ===
+
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!lovableApiKey) {
       return new Response(JSON.stringify({ error: "LOVABLE_API_KEY not configured" }), {

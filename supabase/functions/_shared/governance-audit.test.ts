@@ -65,7 +65,8 @@ Deno.test("No direct ai.gateway calls outside shared helpers", async () => {
 });
 
 Deno.test("No hardcoded model strings outside MODEL_MAP", async () => {
-  const modelPattern = /["'](openai\/(?!text-embedding)[^"']+|google\/gemini[^"']+|anthropic\/[^"']+)["']/g;
+  // Extended pattern: catch prefixed (openai/, google/, anthropic/) AND bare model names (gpt-*, gemini-*, claude-*)
+  const modelPattern = /["'](openai\/(?!text-embedding)[^"']+|google\/gemini[^"']+|anthropic\/[^"']+|gpt-\d[^"']*|gemini-\d[^"']*|claude-\d[^"']*)["']/g;
   const files = await collectTsFiles(FUNCTIONS_DIR);
   const violations: string[] = [];
 
@@ -110,6 +111,7 @@ Deno.test("MODEL_MAP covers all expected functions", () => {
     "legal-practice-import",
     "prompt-armor-repair",
     "generate-embeddings",
+    "admin-ai-chat",
   ];
 
   // This test validates the list exists — actual MODEL_MAP validation
