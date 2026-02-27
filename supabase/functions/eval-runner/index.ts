@@ -282,29 +282,39 @@ function checkMultiCallSequence(callResults: CallResult[], params?: Record<strin
   const last = callResults[callResults.length - 1];
   const expectedLastReason = (params?.expected_last_reason as string) || "";
 
-  // v2.3: full sequence check via expected_statuses[]
-  const expectedStatuses = params?.expected_statuses as number[] | undefined;
-  if (expectedStatuses && Array.isArray(expectedStatuses)) {
-    if (expectedStatuses.length !== statuses.length) {
-      return {
-        type: "multi_call_status_sequence",
-        passed: false,
-        message: `Status count mismatch: got ${statuses.length} calls, expected ${expectedStatuses.length}. Actual: [${statuses.join(",")}]`,
-        details: { statuses, expected_statuses: expectedStatuses, last_body: last.body },
-      };
-    }
+  // Truncate last_body for storage
+  const lastBodyStr = JSON.stringify(last.body || {});
+  const lastBodyTruncated = lastBodyStr.length > 500
+    ? JSON.parse(lastBodyStr.substring(0, 497) + "...") ?? last.body
+    : last.body;
+  // Safe truncation: store as string if parse fails
+  const safeLastBody = (() => {
+    try {
+      const s = JSON.stringify(last.body || {});
+      return s.length > 500 ? { _truncated: s.substring(0, 500) } : last.body;
+    } catch { return { _truncated: "unserializable" }; }
+  })();
 
+  const reasonMatch = !expectedLastReason ||
+    (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
+
+  const expectedStatuses = params?.expected_statuses as number[] | undefined;
+
+  // Mode 1: full sequence check
+  if (expectedStatuses && Array.isArray(expectedStatuses)) {
     const mismatches: string[] = [];
-    for (let i = 0; i < expectedStatuses.length; i++) {
-      if (statuses[i] !== expectedStatuses[i]) {
-        mismatches.push(`call[${i}]: got ${statuses[i]}, expected ${expectedStatuses[i]}`);
+
+    if (expectedStatuses.length !== statuses.length) {
+      mismatches.push(`count: got ${statuses.length}, expected ${expectedStatuses.length}`);
+    } else {
+      for (let i = 0; i < expectedStatuses.length; i++) {
+        if (statuses[i] !== expectedStatuses[i]) {
+          mismatches.push(`call[${i}]: got ${statuses[i]}, expected ${expectedStatuses[i]}`);
+        }
       }
     }
 
-    const reasonMatch = !expectedLastReason ||
-      (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
-
-    if (!reasonMatch) {
+    if (!reasonMatch && expectedLastReason) {
       mismatches.push(`last reason: got '${last.body?.reason || last.body?.error}', expected '${expectedLastReason}'`);
     }
 
@@ -313,25 +323,24 @@ function checkMultiCallSequence(callResults: CallResult[], params?: Record<strin
       type: "multi_call_status_sequence",
       passed,
       message: passed
-        ? `Sequence [${statuses.join(",")}] matches expected [${expectedStatuses.join(",")}], reason='${expectedLastReason}' ✓`
+        ? `Sequence [${statuses.join(",")}] ✓${expectedLastReason ? `, reason='${expectedLastReason}' ✓` : ""}`
         : `Mismatches: ${mismatches.join("; ")}`,
-      details: { statuses, expected_statuses: expectedStatuses, last_body: last.body },
+      details: { statuses, expected_statuses: expectedStatuses, last_body: safeLastBody },
     };
   }
 
-  // Fallback: check only last status
+  // Mode 2: last status only
   const expectedLastStatus = (params?.expected_last_status as number) || 429;
   const statusMatch = last.status === expectedLastStatus;
-  const reasonMatch = !expectedLastReason || (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
   const passed = statusMatch && reasonMatch;
 
   return {
     type: "multi_call_status_sequence",
     passed,
     message: passed
-      ? `Last=${expectedLastStatus}, reason='${expectedLastReason}' ✓. Seq: [${statuses.join(",")}]`
-      : `Expected last=${expectedLastStatus} reason='${expectedLastReason}', got ${last.status}. Seq: [${statuses.join(",")}]`,
-    details: { statuses, last_body: last.body, expected_last_status: expectedLastStatus, expected_last_reason: expectedLastReason },
+      ? `Last=${expectedLastStatus}${expectedLastReason ? ` reason='${expectedLastReason}'` : ""} ✓. Seq: [${statuses.join(",")}]`
+      : `Expected last=${expectedLastStatus}${expectedLastReason ? ` reason='${expectedLastReason}'` : ""}, got ${last.status}/${last.body?.reason || last.body?.error}`,
+    details: { statuses, last_body: safeLastBody },
   };
 }
 
