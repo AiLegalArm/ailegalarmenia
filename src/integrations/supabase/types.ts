@@ -2326,6 +2326,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      avg_chunks_per_kb_doc: { Args: never; Returns: number }
       check_budget_alert: { Args: { budget_limit?: number }; Returns: boolean }
       claim_chunk_jobs: {
         Args: {
@@ -2372,6 +2373,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      count_kb_docs_without_chunks: { Args: never; Returns: number }
       decrypt_pii: {
         Args: { _field_name: string; _user_id: string }
         Returns: string
@@ -2414,6 +2416,12 @@ export type Database = {
       get_kb_chunk_full: {
         Args: { p_chunk_index: number; p_kb_id: string }
         Returns: Json
+      }
+      get_kb_docs_without_chunks: {
+        Args: { batch_limit?: number }
+        Returns: {
+          id: string
+        }[]
       }
       get_led_team_ids: { Args: { _user_id: string }; Returns: string[] }
       get_monthly_usage: {
