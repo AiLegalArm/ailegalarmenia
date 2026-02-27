@@ -94,10 +94,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Cheap utilities (Gemini Flash) ────────────────────────────────────────
   "audio-transcribe": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.1,
     max_tokens: 16000,
-    description: "Transcription (Gemini Flash)",
+    description: "Transcription (Gemini Pro — anti-hallucination)",
   },
   "echr-translate": {
     model: "google/gemini-2.5-flash",

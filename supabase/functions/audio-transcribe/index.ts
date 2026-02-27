@@ -194,9 +194,30 @@ serve(async (req) => {
     }
 
     const word_count = transcription.split(/\s+/).filter(Boolean).length;
-    const confidence_score = 0.85;
 
-    const needsReview = confidence_score < CONFIDENCE_THRESHOLD;
+    // Detect repetition hallucinations (e.g. same word/phrase repeated 10+ times)
+    const words = transcription.split(/\s+/).filter(Boolean);
+    let maxRepeat = 0;
+    let currentRepeat = 1;
+    for (let i = 1; i < words.length; i++) {
+      if (words[i] === words[i - 1]) {
+        currentRepeat++;
+        if (currentRepeat > maxRepeat) maxRepeat = currentRepeat;
+      } else {
+        currentRepeat = 1;
+      }
+    }
+    const hasRepetitionHallucination = maxRepeat >= 8;
+    const warnings: string[] = [];
+
+    let confidence_score = 0.85;
+    if (hasRepetitionHallucination) {
+      confidence_score = 0.3;
+      warnings.push("Detected repetitive text — possible hallucination due to poor audio quality");
+      console.warn(`[audio-transcribe] Repetition hallucination detected: ${maxRepeat} consecutive repeats`);
+    }
+
+    const needsReview = confidence_score < CONFIDENCE_THRESHOLD || hasRepetitionHallucination;
 
     const confidence_reason = confidence_score >= 0.8
       ? "High confidence transcription"
@@ -246,7 +267,7 @@ serve(async (req) => {
       confidence_score,
       confidence_reason,
       duration_seconds: 0,
-      warnings: [],
+      warnings,
       word_count,
       needs_review: needsReview,
       tokens_used: 0
