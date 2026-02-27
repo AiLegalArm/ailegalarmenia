@@ -160,6 +160,11 @@ const AdminPanel = () => {
           <TabsContent value="dictionary">
             <DictionaryImport />
           </TabsContent>
+
+          {/* Data Migration Tab */}
+          <TabsContent value="migration">
+            <DataMigration />
+          </TabsContent>
         </Tabs>
 
         <AdminAIChatBot />
