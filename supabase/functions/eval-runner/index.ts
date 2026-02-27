@@ -1,18 +1,17 @@
 /**
- * eval-runner — Evaluation Framework Runner (v2.2)
+ * eval-runner — Evaluation Framework Runner (v2.3)
  *
- * v2.2 changes:
- *   - multi_call mode: execute N sequential calls for rate-limit testing
- *   - http_status + response_headers persisted in eval_run_results
- *   - New invariant types: http_status_check, header_check, field_check,
- *     multi_call_status_sequence
- *   - _method / _headers in input_payload for OPTIONS/custom-header calls
+ * v2.3 changes:
+ *   - Authorization: payload._headers.Authorization respected; fallback to service key
+ *   - Deterministic test setup for P0 rate-limit/budget cases via setupEvalClient()
+ *   - multi_call_status_sequence supports expected_statuses[] array
+ *   - eval_cases C/D use EVAL_CLIENT_JWT env for auth
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors, validateBrowserRequest } from "../_shared/edge-security.ts";
-import { log, err } from "../_shared/safe-logger.ts";
+import { log, warn, err } from "../_shared/safe-logger.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +40,6 @@ interface CitedItem {
   effective_to?: string | null;
 }
 
-/** Response from a single edge function call */
 interface CallResult {
   status: number;
   headers: Record<string, string>;
@@ -49,11 +47,8 @@ interface CallResult {
   latencyMs: number;
 }
 
-/** Normalize a date-only or ISO string to midnight UTC */
 function normalizeReferenceDate(raw: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return new Date(raw + "T00:00:00Z");
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(raw + "T00:00:00Z");
   return new Date(raw);
 }
 
@@ -66,32 +61,22 @@ function isEffectiveOn(
 ): { valid: boolean; reason?: string } {
   if (effectiveFrom) {
     const from = new Date(effectiveFrom);
-    if (from > referenceDate) {
-      return { valid: false, reason: `effective_from (${effectiveFrom}) is after reference_date` };
-    }
+    if (from > referenceDate) return { valid: false, reason: `effective_from (${effectiveFrom}) is after reference_date` };
   }
   if (effectiveTo) {
     const to = new Date(effectiveTo);
-    if (to <= referenceDate) {
-      return { valid: false, reason: `effective_to (${effectiveTo}) is on or before reference_date (exclusive upper bound)` };
-    }
+    if (to <= referenceDate) return { valid: false, reason: `effective_to (${effectiveTo}) is on or before reference_date` };
   }
   return { valid: true };
 }
 
-// ── Citation extractor (v2.1: dedupe + mode-aware) ───────────────────────────
+// ── Citation extractor ───────────────────────────────────────────────────────
 
-function extractCitations(
-  response: Record<string, unknown>,
-  targetFunction?: string,
-): CitedItem[] {
+function extractCitations(response: Record<string, unknown>, targetFunction?: string): CitedItem[] {
   const seen = new Map<string, CitedItem>();
-
   const addItem = (item: CitedItem) => {
     const key = `${item.source_type}:${item.doc_id}`;
-    if (!seen.has(key)) {
-      seen.set(key, item);
-    }
+    if (!seen.has(key)) seen.set(key, item);
   };
 
   for (const key of ["kb", "practice"] as const) {
@@ -99,14 +84,7 @@ function extractCitations(
     if (!Array.isArray(arr)) continue;
     for (const r of arr) {
       if (r && typeof r === "object" && r.id) {
-        addItem({
-          id: r.id,
-          doc_id: r.doc_id || r.id,
-          title: r.title || "",
-          source_type: r.source_type || key,
-          effective_from: r.effective_from ?? null,
-          effective_to: r.effective_to ?? null,
-        });
+        addItem({ id: r.id, doc_id: r.doc_id || r.id, title: r.title || "", source_type: r.source_type || key, effective_from: r.effective_from ?? null, effective_to: r.effective_to ?? null });
       }
     }
   }
@@ -116,14 +94,7 @@ function extractCitations(
     if (Array.isArray(sourcesUsed)) {
       for (const s of sourcesUsed) {
         if (s && typeof s === "object" && (s.id || s.doc_id)) {
-          addItem({
-            id: s.id || s.doc_id,
-            doc_id: s.doc_id || s.id,
-            title: s.title || "",
-            source_type: s.source_type || "kb",
-            effective_from: s.effective_from ?? null,
-            effective_to: s.effective_to ?? null,
-          });
+          addItem({ id: s.id || s.doc_id, doc_id: s.doc_id || s.id, title: s.title || "", source_type: s.source_type || "kb", effective_from: s.effective_from ?? null, effective_to: s.effective_to ?? null });
         }
       }
     }
@@ -132,30 +103,17 @@ function extractCitations(
   return [...seen.values()];
 }
 
-// ── Invariant validators (existing) ──────────────────────────────────────────
+// ── Invariant validators ─────────────────────────────────────────────────────
 
-function checkCitationsPresent(
-  response: Record<string, unknown>,
-  targetFunction?: string,
-  params?: Record<string, unknown>,
-): InvariantResult {
+function checkCitationsPresent(response: Record<string, unknown>, targetFunction?: string, params?: Record<string, unknown>): InvariantResult {
   const mode = (params?.mode as string) || "hybrid";
   const citations = extractCitations(response, targetFunction);
 
   if (mode === "structured_only") {
-    const valid = citations.filter(
-      c => c.doc_id && c.title && VALID_SOURCE_TYPES.has(c.source_type),
-    );
+    const valid = citations.filter(c => c.doc_id && c.title && VALID_SOURCE_TYPES.has(c.source_type));
     const invalid = citations.length - valid.length;
     const passed = valid.length > 0;
-    return {
-      type: "citations_present",
-      passed,
-      message: passed
-        ? `${valid.length} valid structural citation(s) (structured_only)${invalid > 0 ? `, ${invalid} malformed skipped` : ""}`
-        : "No valid structural citations (structured_only): require doc_id, title, valid source_type",
-      details: { valid_count: valid.length, malformed_count: invalid, mode },
-    };
+    return { type: "citations_present", passed, message: passed ? `${valid.length} valid structural citation(s)` : "No valid structural citations", details: { valid_count: valid.length, malformed_count: invalid, mode } };
   }
 
   const hasStructural = citations.length > 0;
@@ -164,41 +122,19 @@ function checkCitationsPresent(
   const refPatterns = [/\b(Article|Art\.?)\s*\.?\s*\d+/i, /\bECHR\b/i, /ՀՀ\s*(ՔՕ|ՔԴՕ)/];
   const hasTextRef = refPatterns.some(p => p.test(text));
   const passed = hasStructural || hasArmenianFormat || hasTextRef;
-
-  return {
-    type: "citations_present",
-    passed,
-    message: passed
-      ? `Citations found: ${citations.length} structural${hasArmenianFormat ? " + Armenian format (Տե՛ս՝)" : ""}${hasTextRef ? " + text references" : ""}`
-      : "No citations detected in any form",
-    details: { structural_count: citations.length, has_armenian_format: hasArmenianFormat, has_text_references: hasTextRef, mode },
-  };
+  return { type: "citations_present", passed, message: passed ? `Citations found: ${citations.length} structural` : "No citations detected", details: { structural_count: citations.length, has_armenian_format: hasArmenianFormat, has_text_references: hasTextRef, mode } };
 }
 
 const MAX_CITED_IDS = 50;
 
-async function checkCitedIdsExist(
-  response: Record<string, unknown>,
-  supabase: SupabaseClient,
-  targetFunction?: string,
-): Promise<InvariantResult> {
+async function checkCitedIdsExist(response: Record<string, unknown>, supabase: SupabaseClient, targetFunction?: string): Promise<InvariantResult> {
   const citations = extractCitations(response, targetFunction);
-  if (citations.length === 0) {
-    return { type: "cited_ids_exist", passed: true, message: "No cited IDs to verify" };
-  }
+  if (citations.length === 0) return { type: "cited_ids_exist", passed: true, message: "No cited IDs to verify" };
 
   const kbIds = [...new Set(citations.filter(c => c.source_type === "kb").map(c => c.doc_id))];
   const practiceIds = [...new Set(citations.filter(c => c.source_type === "practice").map(c => c.doc_id))];
   const totalUnique = kbIds.length + practiceIds.length;
-
-  if (totalUnique > MAX_CITED_IDS) {
-    return {
-      type: "cited_ids_exist",
-      passed: false,
-      message: `Too many unique cited IDs (${totalUnique} > ${MAX_CITED_IDS}). Fail-fast.`,
-      details: { total_unique: totalUnique, limit: MAX_CITED_IDS },
-    };
-  }
+  if (totalUnique > MAX_CITED_IDS) return { type: "cited_ids_exist", passed: false, message: `Too many unique cited IDs (${totalUnique} > ${MAX_CITED_IDS}). Fail-fast.` };
 
   const missing: Array<{ doc_id: string; source_type: string }> = [];
 
@@ -216,14 +152,7 @@ async function checkCitedIdsExist(
     for (const id of practiceIds) if (!foundPractice.has(id)) missing.push({ doc_id: id, source_type: "practice" });
   }
 
-  return {
-    type: "cited_ids_exist",
-    passed: missing.length === 0,
-    message: missing.length === 0
-      ? `All ${totalUnique} cited IDs verified in DB`
-      : `${missing.length} cited ID(s) not found in DB`,
-    details: missing.length > 0 ? { missing } : undefined,
-  };
+  return { type: "cited_ids_exist", passed: missing.length === 0, message: missing.length === 0 ? `All ${totalUnique} cited IDs verified` : `${missing.length} cited ID(s) not found`, details: missing.length > 0 ? { missing } : undefined };
 }
 
 function checkNoFabricatedSources(response: Record<string, unknown>): InvariantResult {
@@ -231,20 +160,11 @@ function checkNoFabricatedSources(response: Record<string, unknown>): InvariantR
   const fabricatedPattern = /(?:Article|Art\.?)\s*\.?\s*(\d{4,})/gi;
   const matches = [...text.matchAll(fabricatedPattern)];
   const fabricated = matches.filter(m => parseInt(m[1]) > 999);
-  return {
-    type: "no_fabricated_sources",
-    passed: fabricated.length === 0,
-    message: fabricated.length === 0
-      ? "No fabricated sources detected"
-      : `Potentially fabricated article numbers: ${fabricated.map(m => m[0]).join(", ")}`,
-    details: fabricated.length > 0 ? fabricated.map(m => m[0]) : undefined,
-  };
+  return { type: "no_fabricated_sources", passed: fabricated.length === 0, message: fabricated.length === 0 ? "No fabricated sources" : `Fabricated: ${fabricated.map(m => m[0]).join(", ")}` };
 }
 
 function checkLanguageMatch(response: Record<string, unknown>, expectedLang?: string): InvariantResult {
-  if (!expectedLang) {
-    return { type: "language_match", passed: true, message: "No expected language specified, skipped" };
-  }
+  if (!expectedLang) return { type: "language_match", passed: true, message: "No expected language, skipped" };
   const text = extractText(response);
   const sample = text.substring(0, 500);
   let detected: string;
@@ -252,22 +172,19 @@ function checkLanguageMatch(response: Record<string, unknown>, expectedLang?: st
   else if (/[\u0400-\u04FF]/.test(sample)) detected = "ru";
   else detected = "en";
   const passed = detected === expectedLang;
-  return { type: "language_match", passed, message: passed ? `Language matches: ${expectedLang}` : `Expected ${expectedLang}, detected ${detected}`, details: { expected: expectedLang, detected } };
+  return { type: "language_match", passed, message: passed ? `Language matches: ${expectedLang}` : `Expected ${expectedLang}, detected ${detected}` };
 }
 
 async function checkTemporalInRange(
-  response: Record<string, unknown>,
-  referenceDate: string,
-  supabase: SupabaseClient,
-  targetFunction?: string,
-  citedIdsFailed?: boolean,
+  response: Record<string, unknown>, referenceDate: string, supabase: SupabaseClient,
+  targetFunction?: string, citedIdsFailed?: boolean,
 ): Promise<InvariantResult & { temporal_metadata_source: TemporalMetadataSource }> {
   if (!referenceDate) return { type: "temporal_in_range", passed: true, message: "No reference_date, skipped", temporal_metadata_source: "none" };
   if (citedIdsFailed) return { type: "temporal_in_range", passed: false, message: "Skipped: cited_ids_exist failed", temporal_metadata_source: "none" };
 
   const citations = extractCitations(response, targetFunction);
   const kbCitations = citations.filter(c => c.source_type === "kb");
-  if (kbCitations.length === 0) return { type: "temporal_in_range", passed: true, message: "No KB citations to validate temporally", temporal_metadata_source: "none" };
+  if (kbCitations.length === 0) return { type: "temporal_in_range", passed: true, message: "No KB citations", temporal_metadata_source: "none" };
 
   const refDate = normalizeReferenceDate(referenceDate);
   const withMeta = kbCitations.filter(c => c.effective_from != null || c.effective_to != null);
@@ -277,9 +194,7 @@ async function checkTemporalInRange(
   const citationsMap = new Map<string, { doc_id: string; title: string; effective_from: string | null; effective_to: string | null }>();
 
   for (const c of withMeta) {
-    if (!citationsMap.has(c.doc_id)) {
-      citationsMap.set(c.doc_id, { doc_id: c.doc_id, title: c.title, effective_from: c.effective_from ?? null, effective_to: c.effective_to ?? null });
-    }
+    if (!citationsMap.has(c.doc_id)) citationsMap.set(c.doc_id, { doc_id: c.doc_id, title: c.title, effective_from: c.effective_from ?? null, effective_to: c.effective_to ?? null });
   }
 
   if (withoutMeta.length === 0) {
@@ -293,17 +208,14 @@ async function checkTemporalInRange(
       if (error) return { type: "temporal_in_range", passed: false, message: `DB error: ${error.message}`, temporal_metadata_source: "db_fallback" };
       const foundIds = new Set((docs || []).map(d => d.id));
       const notFound = missingDocIds.filter(id => !foundIds.has(id));
-      if (notFound.length > 0) return { type: "temporal_in_range", passed: false, message: `${notFound.length} cited KB doc(s) not found`, details: { missing_doc_ids: notFound }, temporal_metadata_source: "db_fallback" };
-      for (const d of docs || []) {
-        if (!citationsMap.has(d.id)) citationsMap.set(d.id, { doc_id: d.id, title: d.title, effective_from: d.effective_from, effective_to: d.effective_to });
-      }
+      if (notFound.length > 0) return { type: "temporal_in_range", passed: false, message: `${notFound.length} KB doc(s) not found`, temporal_metadata_source: "db_fallback" };
+      for (const d of docs || []) if (!citationsMap.has(d.id)) citationsMap.set(d.id, { doc_id: d.id, title: d.title, effective_from: d.effective_from, effective_to: d.effective_to });
       metadataSource = withMeta.length > 0 ? "hybrid" : "db_fallback";
     }
   }
 
   const citationsToCheck = [...citationsMap.values()];
   const violations: Array<{ doc_id: string; title: string; effective_from: string | null; effective_to: string | null; reason: string }> = [];
-
   for (const doc of citationsToCheck) {
     const check = isEffectiveOn(doc.effective_from, doc.effective_to, refDate);
     if (!check.valid) violations.push({ ...doc, reason: check.reason! });
@@ -312,9 +224,7 @@ async function checkTemporalInRange(
   return {
     type: "temporal_in_range",
     passed: violations.length === 0,
-    message: violations.length === 0
-      ? `All ${citationsToCheck.length} KB docs temporally valid for ${referenceDate} (${metadataSource})`
-      : `${violations.length} temporal violation(s)`,
+    message: violations.length === 0 ? `All ${citationsToCheck.length} KB docs temporally valid (${metadataSource})` : `${violations.length} temporal violation(s)`,
     details: violations.length > 0 ? { violations, metadata_source: metadataSource } : { metadata_source: metadataSource },
     temporal_metadata_source: metadataSource,
   };
@@ -324,96 +234,103 @@ function checkAgentSchemaValid(response: Record<string, unknown>, targetFunction
   if (targetFunction === "vector-search") {
     const hasKb = Array.isArray(response.kb);
     const hasPractice = Array.isArray(response.practice);
-    const kbItems = (response.kb || []) as Array<Record<string, unknown>>;
-    const allHaveDocId = kbItems.length === 0 || kbItems.every(r => r.doc_id);
-    return {
-      type: "agent_schema_valid",
-      passed: hasKb && hasPractice,
-      message: hasKb && hasPractice
-        ? `Valid schema (kb[${kbItems.length}], practice[${(response.practice as unknown[]).length}])${allHaveDocId ? ", all have doc_id" : ", MISSING doc_id"}`
-        : `Missing fields: ${!hasKb ? "kb" : ""} ${!hasPractice ? "practice" : ""}`.trim(),
-      details: { has_kb: hasKb, has_practice: hasPractice, all_have_doc_id: allHaveDocId },
-    };
+    return { type: "agent_schema_valid", passed: hasKb && hasPractice, message: hasKb && hasPractice ? "Valid schema" : "Missing kb/practice" };
   }
-
   if (targetFunction === "ai-analyze") {
     const hasResult = typeof response.analysis_result === "string" || typeof response.result === "string";
-    return { type: "agent_schema_valid", passed: hasResult, message: hasResult ? "Response has analysis result" : "Missing analysis_result/result field" };
+    return { type: "agent_schema_valid", passed: hasResult, message: hasResult ? "Has analysis result" : "Missing analysis_result" };
   }
-
   const hasContent = Object.keys(response).length > 0;
-  return { type: "agent_schema_valid", passed: hasContent, message: hasContent ? "Response is non-empty" : "Empty response" };
+  return { type: "agent_schema_valid", passed: hasContent, message: hasContent ? "Non-empty" : "Empty response" };
 }
 
-// ── NEW: P0 Hardening invariants ─────────────────────────────────────────────
+// ── P0 Hardening invariants ──────────────────────────────────────────────────
 
-/** Check HTTP status matches expected */
 function checkHttpStatus(actual: number, params?: Record<string, unknown>): InvariantResult {
   const expected = (params?.expected as number) || 200;
-  return {
-    type: "http_status_check",
-    passed: actual === expected,
-    message: actual === expected
-      ? `HTTP ${actual} matches expected ${expected}`
-      : `HTTP ${actual} does not match expected ${expected}`,
-    details: { actual, expected },
-  };
+  return { type: "http_status_check", passed: actual === expected, message: actual === expected ? `HTTP ${actual} ✓` : `HTTP ${actual} ≠ expected ${expected}`, details: { actual, expected } };
 }
 
-/** Check a response header contains a substring */
 function checkHeader(headers: Record<string, string>, params?: Record<string, unknown>): InvariantResult {
   const headerName = ((params?.header as string) || "").toLowerCase();
   const contains = ((params?.contains as string) || "").toLowerCase();
   const headerValue = (headers[headerName] || "").toLowerCase();
   const passed = headerValue.includes(contains);
-  return {
-    type: "header_check",
-    passed,
-    message: passed
-      ? `Header '${headerName}' contains '${contains}'`
-      : `Header '${headerName}' = '${headerValue}' does not contain '${contains}'`,
-    details: { header: headerName, expected_contains: contains, actual: headerValue },
-  };
+  return { type: "header_check", passed, message: passed ? `'${headerName}' contains '${contains}' ✓` : `'${headerName}'='${headerValue}' missing '${contains}'`, details: { header: headerName, expected_contains: contains, actual: headerValue } };
 }
 
-/** Check a response body field equals expected value */
 function checkField(body: Record<string, unknown>, params?: Record<string, unknown>): InvariantResult {
   const field = (params?.field as string) || "";
   const equals = params?.equals;
   const actual = body[field];
   const passed = actual === equals;
-  return {
-    type: "field_check",
-    passed,
-    message: passed
-      ? `body.${field} = '${equals}' ✓`
-      : `body.${field} = '${actual}', expected '${equals}'`,
-    details: { field, expected: equals, actual },
-  };
+  return { type: "field_check", passed, message: passed ? `body.${field}='${equals}' ✓` : `body.${field}='${actual}' ≠ '${equals}'`, details: { field, expected: equals, actual } };
 }
 
-/** For multi_call: check the last call's status and reason */
+/**
+ * multi_call_status_sequence (v2.3):
+ * - If params.expected_statuses is an array, check full sequence match.
+ * - Else fallback to checking only last status via expected_last_status.
+ * - Always check expected_last_reason against last body.
+ */
 function checkMultiCallSequence(callResults: CallResult[], params?: Record<string, unknown>): InvariantResult {
-  const expectedLastStatus = (params?.expected_last_status as number) || 429;
-  const expectedLastReason = (params?.expected_last_reason as string) || "";
-
   if (callResults.length === 0) {
     return { type: "multi_call_status_sequence", passed: false, message: "No call results" };
   }
 
+  const statuses = callResults.map(r => r.status);
   const last = callResults[callResults.length - 1];
+  const expectedLastReason = (params?.expected_last_reason as string) || "";
+
+  // v2.3: full sequence check via expected_statuses[]
+  const expectedStatuses = params?.expected_statuses as number[] | undefined;
+  if (expectedStatuses && Array.isArray(expectedStatuses)) {
+    if (expectedStatuses.length !== statuses.length) {
+      return {
+        type: "multi_call_status_sequence",
+        passed: false,
+        message: `Status count mismatch: got ${statuses.length} calls, expected ${expectedStatuses.length}. Actual: [${statuses.join(",")}]`,
+        details: { statuses, expected_statuses: expectedStatuses, last_body: last.body },
+      };
+    }
+
+    const mismatches: string[] = [];
+    for (let i = 0; i < expectedStatuses.length; i++) {
+      if (statuses[i] !== expectedStatuses[i]) {
+        mismatches.push(`call[${i}]: got ${statuses[i]}, expected ${expectedStatuses[i]}`);
+      }
+    }
+
+    const reasonMatch = !expectedLastReason ||
+      (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
+
+    if (!reasonMatch) {
+      mismatches.push(`last reason: got '${last.body?.reason || last.body?.error}', expected '${expectedLastReason}'`);
+    }
+
+    const passed = mismatches.length === 0;
+    return {
+      type: "multi_call_status_sequence",
+      passed,
+      message: passed
+        ? `Sequence [${statuses.join(",")}] matches expected [${expectedStatuses.join(",")}], reason='${expectedLastReason}' ✓`
+        : `Mismatches: ${mismatches.join("; ")}`,
+      details: { statuses, expected_statuses: expectedStatuses, last_body: last.body },
+    };
+  }
+
+  // Fallback: check only last status
+  const expectedLastStatus = (params?.expected_last_status as number) || 429;
   const statusMatch = last.status === expectedLastStatus;
   const reasonMatch = !expectedLastReason || (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
   const passed = statusMatch && reasonMatch;
-
-  const statuses = callResults.map(r => r.status);
 
   return {
     type: "multi_call_status_sequence",
     passed,
     message: passed
-      ? `Last call returned ${expectedLastStatus} with reason '${expectedLastReason}'. Sequence: [${statuses.join(",")}]`
-      : `Expected last status=${expectedLastStatus} reason='${expectedLastReason}', got status=${last.status} body=${JSON.stringify(last.body).substring(0, 200)}. Sequence: [${statuses.join(",")}]`,
+      ? `Last=${expectedLastStatus}, reason='${expectedLastReason}' ✓. Seq: [${statuses.join(",")}]`
+      : `Expected last=${expectedLastStatus} reason='${expectedLastReason}', got ${last.status}. Seq: [${statuses.join(",")}]`,
     details: { statuses, last_body: last.body, expected_last_status: expectedLastStatus, expected_last_reason: expectedLastReason },
   };
 }
@@ -425,9 +342,7 @@ function extractText(response: Record<string, unknown>): string {
     if (typeof response[key] === "string") return response[key] as string;
   }
   if (Array.isArray(response.kb)) {
-    return (response.kb as Array<{ title?: string; content_text?: string }>)
-      .map(r => `${r.title || ""} ${r.content_text || ""}`)
-      .join(" ");
+    return (response.kb as Array<{ title?: string; content_text?: string }>).map(r => `${r.title || ""} ${r.content_text || ""}`).join(" ");
   }
   return JSON.stringify(response);
 }
@@ -438,7 +353,95 @@ function headersToRecord(headers: Headers): Record<string, string> {
   return rec;
 }
 
-// ── Call helper ──────────────────────────────────────────────────────────────
+// ── Deterministic test setup ────────────────────────────────────────────────
+
+/**
+ * Setup eval_client user for rate-limit/budget tests.
+ * - Ensures user_roles has role=client
+ * - Sets role_limits for client: hourly=2, monthly_token=10, monthly_cost=999
+ * - Clears api_usage for this user (current hour + month)
+ * Returns the user_id or null if env not configured.
+ */
+async function setupEvalClient(supabase: SupabaseClient): Promise<{ userId: string | null; jwt: string | null; setupLog: string[] }> {
+  const setupLog: string[] = [];
+  const evalEmail = Deno.env.get("EVAL_CLIENT_EMAIL");
+  const evalJwt = Deno.env.get("EVAL_CLIENT_JWT");
+
+  if (!evalEmail || !evalJwt) {
+    setupLog.push("EVAL_CLIENT_EMAIL or EVAL_CLIENT_JWT not set — rate limit tests will use service-role (may not trigger limits)");
+    return { userId: null, jwt: null, setupLog };
+  }
+
+  // Find user by email via admin API
+  const { data: userList, error: listErr } = await supabase.auth.admin.listUsers();
+  if (listErr) {
+    setupLog.push(`Failed to list users: ${listErr.message}`);
+    return { userId: null, jwt: evalJwt, setupLog };
+  }
+
+  const evalUser = userList.users.find(u => u.email === evalEmail);
+  if (!evalUser) {
+    setupLog.push(`User ${evalEmail} not found in auth.users — create this user first`);
+    return { userId: null, jwt: evalJwt, setupLog };
+  }
+
+  const userId = evalUser.id;
+  setupLog.push(`Found eval user: ${userId} (${evalEmail})`);
+
+  // Ensure role=client in user_roles
+  const { data: existingRole } = await supabase
+    .from("user_roles")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("role", "client")
+    .maybeSingle();
+
+  if (!existingRole) {
+    const { error: roleErr } = await supabase
+      .from("user_roles")
+      .upsert({ user_id: userId, role: "client" }, { onConflict: "user_id,role" });
+    if (roleErr) setupLog.push(`Failed to set role: ${roleErr.message}`);
+    else setupLog.push("Set role=client ✓");
+  } else {
+    setupLog.push("Role=client already exists ✓");
+  }
+
+  // Upsert role_limits for client
+  const { error: limitsErr } = await supabase
+    .from("role_limits")
+    .upsert(
+      { role: "client", hourly_limit: 2, monthly_token_limit: 10, monthly_cost_limit: 999 },
+      { onConflict: "role" },
+    );
+  if (limitsErr) setupLog.push(`Failed to set role_limits: ${limitsErr.message}`);
+  else setupLog.push("role_limits client: hourly=2, monthly_token=10 ✓");
+
+  // Clear api_usage for this user (current hour + month)
+  const oneHourAgo = new Date(Date.now() - 3600_000).toISOString();
+  const { error: clearErr } = await supabase
+    .from("api_usage")
+    .delete()
+    .eq("user_id", userId)
+    .gte("created_at", oneHourAgo);
+  if (clearErr) setupLog.push(`Failed to clear hourly api_usage: ${clearErr.message}`);
+  else setupLog.push("Cleared api_usage (last hour) ✓");
+
+  // Also clear monthly usage
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const { error: clearMonthErr } = await supabase
+    .from("api_usage")
+    .delete()
+    .eq("user_id", userId)
+    .gte("created_at", monthStart.toISOString());
+  if (clearMonthErr) setupLog.push(`Failed to clear monthly api_usage: ${clearMonthErr.message}`);
+  else setupLog.push("Cleared api_usage (current month) ✓");
+
+  return { userId, jwt: evalJwt, setupLog };
+}
+
+// ── Call helper (v2.3: Authorization logic) ─────────────────────────────────
 
 async function callEdgeFunction(
   supabaseUrl: string,
@@ -449,7 +452,6 @@ async function callEdgeFunction(
   const method = (payload._method as string) || "POST";
   const extraHeaders = (payload._headers as Record<string, string>) || {};
 
-  // Strip meta fields from body
   const body = { ...payload };
   delete body._method;
   delete body._headers;
@@ -461,19 +463,22 @@ async function callEdgeFunction(
   const t0 = Date.now();
 
   try {
+    // v2.3: If payload._headers.Authorization is set, use it as-is.
+    // Otherwise fallback to Bearer <serviceKey>.
+    const authHeader = extraHeaders.Authorization || extraHeaders.authorization || `Bearer ${serviceKey}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${serviceKey}`,
-      ...extraHeaders,
+      "Authorization": authHeader,
+      "apikey": serviceKey,
     };
+    // Merge remaining extra headers (except Authorization which we handled)
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      if (k.toLowerCase() !== "authorization") {
+        headers[k] = v;
+      }
+    }
 
-    const fetchOpts: RequestInit = {
-      method,
-      headers,
-      signal: controller.signal,
-    };
-
-    // Don't send body for OPTIONS/GET
+    const fetchOpts: RequestInit = { method, headers, signal: controller.signal };
     if (method !== "OPTIONS" && method !== "GET") {
       fetchOpts.body = JSON.stringify(body);
     }
@@ -490,15 +495,28 @@ async function callEdgeFunction(
       responseBody = { _raw_text: text };
     }
 
-    return {
-      status: response.status,
-      headers: headersToRecord(response.headers),
-      body: responseBody,
-      latencyMs,
-    };
+    return { status: response.status, headers: headersToRecord(response.headers), body: responseBody, latencyMs };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// ── Payload preprocessor: inject EVAL_CLIENT_JWT into _headers ───────────────
+
+function preprocessPayload(
+  payload: Record<string, unknown>,
+  evalJwt: string | null,
+): Record<string, unknown> {
+  const p = { ...payload };
+  const headers = { ...((p._headers as Record<string, string>) || {}) };
+
+  // If payload references __EVAL_CLIENT_JWT__ placeholder, replace with actual JWT
+  if (headers.Authorization === "__EVAL_CLIENT_JWT__" && evalJwt) {
+    headers.Authorization = `Bearer ${evalJwt}`;
+  }
+
+  p._headers = headers;
+  return p;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -509,10 +527,7 @@ serve(async (req) => {
   const corsHeaders = cors.corsHeaders!;
 
   const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   const authErr = validateBrowserRequest(req, corsHeaders);
   if (authErr) return authErr;
@@ -535,6 +550,10 @@ serve(async (req) => {
     if (casesErr) return json({ error: `Failed to fetch cases: ${casesErr.message}` }, 500);
     if (!cases || cases.length === 0) return json({ error: "No active eval cases in suite" }, 404);
 
+    // ── Deterministic setup for P0 rate-limit tests ──────────────────────
+    const { jwt: evalJwt, setupLog } = await setupEvalClient(supabase);
+    log("eval-runner", "Setup complete", { setupLog });
+
     const { data: run, error: runErr } = await supabase
       .from("eval_runs")
       .insert({
@@ -542,13 +561,14 @@ serve(async (req) => {
         status: "running",
         total_cases: cases.length,
         started_at: new Date().toISOString(),
+        metadata: { version: "2.3", setup_log: setupLog },
       })
       .select()
       .single();
 
     if (runErr) return json({ error: `Failed to create run: ${runErr.message}` }, 500);
 
-    log("eval-runner", "Starting eval run v2.2", { run_id: run.id, total_cases: cases.length });
+    log("eval-runner", "Starting eval run v2.3", { run_id: run.id, total_cases: cases.length });
 
     let passed = 0;
     let failed = 0;
@@ -566,9 +586,9 @@ serve(async (req) => {
       const t0 = Date.now();
       try {
         const caseMode = evalCase.mode || "single_call";
-        const inputPayload = evalCase.input_payload as Record<string, unknown>;
+        const rawPayload = evalCase.input_payload as Record<string, unknown>;
+        const inputPayload = preprocessPayload(rawPayload, evalJwt);
 
-        // ── Execute call(s) ──────────────────────────────────────────────
         let callResults: CallResult[];
 
         if (caseMode === "multi_call") {
@@ -580,7 +600,6 @@ serve(async (req) => {
             log("eval-runner", `multi_call ${i + 1}/${callCount}`, { status: result.status, fn: evalCase.target_function });
           }
         } else {
-          // single_call
           const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, evalCase.target_function, inputPayload);
           callResults = [result];
         }
@@ -591,7 +610,6 @@ serve(async (req) => {
         const responseHeaders = lastCall.headers;
         const httpStatus = lastCall.status;
 
-        // ── Run invariant checks ─────────────────────────────────────────
         const invariants: InvariantResult[] = [];
         const invariantDefs = (evalCase.invariants || []) as InvariantDef[];
         let temporalMetadataSource: string | undefined;
@@ -599,7 +617,6 @@ serve(async (req) => {
 
         for (const inv of invariantDefs) {
           switch (inv.type) {
-            // ── P0 Hardening invariants ──
             case "http_status_check":
               invariants.push(checkHttpStatus(httpStatus, inv.params));
               break;
@@ -612,8 +629,6 @@ serve(async (req) => {
             case "multi_call_status_sequence":
               invariants.push(checkMultiCallSequence(callResults, inv.params));
               break;
-
-            // ── Existing invariants ──
             case "citations_present":
               invariants.push(checkCitationsPresent(responseBody, evalCase.target_function, inv.params));
               break;
@@ -639,7 +654,7 @@ serve(async (req) => {
               invariants.push(checkAgentSchemaValid(responseBody, evalCase.target_function));
               break;
             default:
-              invariants.push({ type: inv.type, passed: true, message: `Unknown invariant '${inv.type}', skipped` });
+              invariants.push({ type: inv.type, passed: true, message: `Unknown '${inv.type}', skipped` });
           }
         }
 
@@ -648,26 +663,15 @@ serve(async (req) => {
         if (allPassed) passed++;
         else failed++;
 
-        const temporalViolations = invariants
-          .filter(i => i.type === "temporal_in_range" && !i.passed)
-          .map(i => i.details);
+        const temporalViolations = invariants.filter(i => i.type === "temporal_in_range" && !i.passed).map(i => i.details);
 
-        results.push({
-          case_name: evalCase.name,
-          status: caseStatus,
-          invariants,
-          latency_ms: totalLatency,
-          http_status: httpStatus,
-          temporal_metadata_source: temporalMetadataSource,
-        });
+        results.push({ case_name: evalCase.name, status: caseStatus, invariants, latency_ms: totalLatency, http_status: httpStatus, temporal_metadata_source: temporalMetadataSource });
 
         await supabase.from("eval_run_results").insert({
           run_id: run.id,
           case_id: evalCase.id,
           status: caseStatus,
-          raw_response: caseMode === "multi_call"
-            ? { calls: callResults.map(r => ({ status: r.status, body: r.body })) }
-            : responseBody,
+          raw_response: caseMode === "multi_call" ? { calls: callResults.map(r => ({ status: r.status, body: r.body })) } : responseBody,
           invariant_results: invariants,
           temporal_violations: temporalViolations.length > 0 ? temporalViolations : null,
           temporal_metadata_source: temporalMetadataSource || null,
@@ -679,35 +683,16 @@ serve(async (req) => {
         const latencyMs = Date.now() - t0;
         skipped++;
         const errorMsg = caseErr instanceof Error ? caseErr.message : String(caseErr);
-        results.push({
-          case_name: evalCase.name,
-          status: "skipped",
-          invariants: [{ type: "execution", passed: false, message: `Error: ${errorMsg}` }],
-          latency_ms: latencyMs,
-        });
-
-        await supabase.from("eval_run_results").insert({
-          run_id: run.id,
-          case_id: evalCase.id,
-          status: "skipped",
-          error_message: errorMsg,
-          latency_ms: latencyMs,
-          temporal_metadata_source: null,
-        });
+        results.push({ case_name: evalCase.name, status: "skipped", invariants: [{ type: "execution", passed: false, message: `Error: ${errorMsg}` }], latency_ms: latencyMs });
+        await supabase.from("eval_run_results").insert({ run_id: run.id, case_id: evalCase.id, status: "skipped", error_message: errorMsg, latency_ms: latencyMs, temporal_metadata_source: null });
       }
     }
 
-    await supabase.from("eval_runs").update({
-      status: failed > 0 ? "failed" : "passed",
-      passed,
-      failed,
-      skipped,
-      completed_at: new Date().toISOString(),
-    }).eq("id", run.id);
+    await supabase.from("eval_runs").update({ status: failed > 0 ? "failed" : "passed", passed, failed, skipped, completed_at: new Date().toISOString() }).eq("id", run.id);
 
-    log("eval-runner", "Eval run v2.2 complete", { run_id: run.id, passed, failed, skipped });
+    log("eval-runner", "Eval run v2.3 complete", { run_id: run.id, passed, failed, skipped });
 
-    return json({ run_id: run.id, passed, failed, skipped, total: cases.length, results });
+    return json({ run_id: run.id, passed, failed, skipped, total: cases.length, setup_log: setupLog, results });
   } catch (error) {
     err("eval-runner", "Runner error", { error });
     return json({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
