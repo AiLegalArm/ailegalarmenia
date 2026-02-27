@@ -1,20 +1,17 @@
 /**
- * eval-runner — Evaluation Framework Runner (v2.1)
+ * eval-runner — Evaluation Framework Runner (v2.2)
  *
- * Executes eval cases from a suite, calls target edge functions,
- * validates invariants using structured citation contracts.
- *
- * v2.1 changes:
- *   - isEffectiveOn() helper with [effective_from, effective_to) semantics
- *   - citations_present parameterizable: mode structured_only|hybrid
- *   - cited_ids_exist: fail-fast on >50 cited IDs (no silent partial)
- *   - extractCitations: dedupe by (source_type, doc_id), skip sources_used for vector-search
- *   - temporal_metadata_source persisted in eval_run_results
+ * v2.2 changes:
+ *   - multi_call mode: execute N sequential calls for rate-limit testing
+ *   - http_status + response_headers persisted in eval_run_results
+ *   - New invariant types: http_status_check, header_check, field_check,
+ *     multi_call_status_sequence
+ *   - _method / _headers in input_payload for OPTIONS/custom-header calls
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
-import { handleCors, validateBrowserRequest, callInternalFunction } from "../_shared/edge-security.ts";
+import { handleCors, validateBrowserRequest } from "../_shared/edge-security.ts";
 import { log, err } from "../_shared/safe-logger.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -44,9 +41,16 @@ interface CitedItem {
   effective_to?: string | null;
 }
 
+/** Response from a single edge function call */
+interface CallResult {
+  status: number;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+  latencyMs: number;
+}
+
 /** Normalize a date-only or ISO string to midnight UTC */
 function normalizeReferenceDate(raw: string): Date {
-  // If date-only (YYYY-MM-DD), append T00:00:00Z
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     return new Date(raw + "T00:00:00Z");
   }
@@ -55,11 +59,6 @@ function normalizeReferenceDate(raw: string): Date {
 
 // ── Temporal helper ──────────────────────────────────────────────────────────
 
-/**
- * Half-open interval: [effective_from, effective_to)
- * - If effective_from is null, treated as -∞
- * - If effective_to is null, treated as +∞
- */
 function isEffectiveOn(
   effectiveFrom: string | null | undefined,
   effectiveTo: string | null | undefined,
@@ -73,7 +72,6 @@ function isEffectiveOn(
   }
   if (effectiveTo) {
     const to = new Date(effectiveTo);
-    // Half-open: effective_to is exclusive
     if (to <= referenceDate) {
       return { valid: false, reason: `effective_to (${effectiveTo}) is on or before reference_date (exclusive upper bound)` };
     }
@@ -87,7 +85,7 @@ function extractCitations(
   response: Record<string, unknown>,
   targetFunction?: string,
 ): CitedItem[] {
-  const seen = new Map<string, CitedItem>(); // key: "source_type:doc_id"
+  const seen = new Map<string, CitedItem>();
 
   const addItem = (item: CitedItem) => {
     const key = `${item.source_type}:${item.doc_id}`;
@@ -96,7 +94,6 @@ function extractCitations(
     }
   };
 
-  // From vector-search: kb[] and practice[]
   for (const key of ["kb", "practice"] as const) {
     const arr = response[key];
     if (!Array.isArray(arr)) continue;
@@ -114,8 +111,6 @@ function extractCitations(
     }
   }
 
-  // From analysis responses: sources_used[]
-  // Skip for vector-search to avoid mixing structured results with sources_used
   if (targetFunction !== "vector-search") {
     const sourcesUsed = response.sources_used;
     if (Array.isArray(sourcesUsed)) {
@@ -137,13 +132,8 @@ function extractCitations(
   return [...seen.values()];
 }
 
-// ── Invariant validators ─────────────────────────────────────────────────────
+// ── Invariant validators (existing) ──────────────────────────────────────────
 
-/**
- * citations_present (v2.1): parameterizable mode
- *   - structured_only: only checks structural citations (doc_id/title)
- *   - hybrid (default): also checks Armenian format + text references
- */
 function checkCitationsPresent(
   response: Record<string, unknown>,
   targetFunction?: string,
@@ -153,7 +143,6 @@ function checkCitationsPresent(
   const citations = extractCitations(response, targetFunction);
 
   if (mode === "structured_only") {
-    // Strict: require non-empty doc_id, non-empty title, valid source_type
     const valid = citations.filter(
       c => c.doc_id && c.title && VALID_SOURCE_TYPES.has(c.source_type),
     );
@@ -169,15 +158,10 @@ function checkCitationsPresent(
     };
   }
 
-  // hybrid mode
   const hasStructural = citations.length > 0;
   const text = extractText(response);
   const hasArmenianFormat = /Տե՛ս՝/.test(text);
-  const refPatterns = [
-    /\b(Article|Art\.?)\s*\.?\s*\d+/i,
-    /\bECHR\b/i,
-    /ՀՀ\s*(ՔՕ|ՔԴՕ)/,
-  ];
+  const refPatterns = [/\b(Article|Art\.?)\s*\.?\s*\d+/i, /\bECHR\b/i, /ՀՀ\s*(ՔՕ|ՔԴՕ)/];
   const hasTextRef = refPatterns.some(p => p.test(text));
   const passed = hasStructural || hasArmenianFormat || hasTextRef;
 
@@ -187,18 +171,10 @@ function checkCitationsPresent(
     message: passed
       ? `Citations found: ${citations.length} structural${hasArmenianFormat ? " + Armenian format (Տե՛ս՝)" : ""}${hasTextRef ? " + text references" : ""}`
       : "No citations detected in any form",
-    details: {
-      structural_count: citations.length,
-      has_armenian_format: hasArmenianFormat,
-      has_text_references: hasTextRef,
-      mode,
-    },
+    details: { structural_count: citations.length, has_armenian_format: hasArmenianFormat, has_text_references: hasTextRef, mode },
   };
 }
 
-/**
- * cited_ids_exist (v2.1): fail-fast if >50 unique IDs (no silent partial)
- */
 const MAX_CITED_IDS = 50;
 
 async function checkCitedIdsExist(
@@ -219,7 +195,7 @@ async function checkCitedIdsExist(
     return {
       type: "cited_ids_exist",
       passed: false,
-      message: `Too many unique cited IDs (${totalUnique} > ${MAX_CITED_IDS}). Fail-fast to prevent silent partial validation.`,
+      message: `Too many unique cited IDs (${totalUnique} > ${MAX_CITED_IDS}). Fail-fast.`,
       details: { total_unique: totalUnique, limit: MAX_CITED_IDS },
     };
   }
@@ -227,41 +203,17 @@ async function checkCitedIdsExist(
   const missing: Array<{ doc_id: string; source_type: string }> = [];
 
   if (kbIds.length > 0) {
-    const { data: kbDocs, error: kbError } = await supabase
-      .from("knowledge_base")
-      .select("id")
-      .in("id", kbIds);
-    if (kbError) {
-      return {
-        type: "cited_ids_exist",
-        passed: false,
-        message: `DB error checking KB IDs: ${kbError.message}`,
-        details: { error_source: "knowledge_base", error: kbError.message },
-      };
-    }
+    const { data: kbDocs, error: kbError } = await supabase.from("knowledge_base").select("id").in("id", kbIds);
+    if (kbError) return { type: "cited_ids_exist", passed: false, message: `DB error: ${kbError.message}` };
     const foundKb = new Set((kbDocs || []).map(d => d.id));
-    for (const id of kbIds) {
-      if (!foundKb.has(id)) missing.push({ doc_id: id, source_type: "kb" });
-    }
+    for (const id of kbIds) if (!foundKb.has(id)) missing.push({ doc_id: id, source_type: "kb" });
   }
 
   if (practiceIds.length > 0) {
-    const { data: practiceDocs, error: practiceError } = await supabase
-      .from("legal_practice_kb")
-      .select("id")
-      .in("id", practiceIds);
-    if (practiceError) {
-      return {
-        type: "cited_ids_exist",
-        passed: false,
-        message: `DB error checking Practice IDs: ${practiceError.message}`,
-        details: { error_source: "legal_practice_kb", error: practiceError.message },
-      };
-    }
+    const { data: practiceDocs, error: practiceError } = await supabase.from("legal_practice_kb").select("id").in("id", practiceIds);
+    if (practiceError) return { type: "cited_ids_exist", passed: false, message: `DB error: ${practiceError.message}` };
     const foundPractice = new Set((practiceDocs || []).map(d => d.id));
-    for (const id of practiceIds) {
-      if (!foundPractice.has(id)) missing.push({ doc_id: id, source_type: "practice" });
-    }
+    for (const id of practiceIds) if (!foundPractice.has(id)) missing.push({ doc_id: id, source_type: "practice" });
   }
 
   return {
@@ -274,9 +226,6 @@ async function checkCitedIdsExist(
   };
 }
 
-/**
- * no_fabricated_sources
- */
 function checkNoFabricatedSources(response: Record<string, unknown>): InvariantResult {
   const text = extractText(response);
   const fabricatedPattern = /(?:Article|Art\.?)\s*\.?\s*(\d{4,})/gi;
@@ -292,34 +241,20 @@ function checkNoFabricatedSources(response: Record<string, unknown>): InvariantR
   };
 }
 
-/**
- * language_match
- */
 function checkLanguageMatch(response: Record<string, unknown>, expectedLang?: string): InvariantResult {
   if (!expectedLang) {
     return { type: "language_match", passed: true, message: "No expected language specified, skipped" };
   }
   const text = extractText(response);
   const sample = text.substring(0, 500);
-
   let detected: string;
   if (/[\u0531-\u058F]/.test(sample)) detected = "hy";
   else if (/[\u0400-\u04FF]/.test(sample)) detected = "ru";
   else detected = "en";
-
   const passed = detected === expectedLang;
-  return {
-    type: "language_match",
-    passed,
-    message: passed ? `Language matches: ${expectedLang}` : `Expected ${expectedLang}, detected ${detected}`,
-    details: { expected: expectedLang, detected },
-  };
+  return { type: "language_match", passed, message: passed ? `Language matches: ${expectedLang}` : `Expected ${expectedLang}, detected ${detected}`, details: { expected: expectedLang, detected } };
 }
 
-/**
- * temporal_in_range (v2.1): uses isEffectiveOn() with [from, to) semantics.
- * Returns temporal_metadata_source for analytics.
- */
 async function checkTemporalInRange(
   response: Record<string, unknown>,
   referenceDate: string,
@@ -327,127 +262,51 @@ async function checkTemporalInRange(
   targetFunction?: string,
   citedIdsFailed?: boolean,
 ): Promise<InvariantResult & { temporal_metadata_source: TemporalMetadataSource }> {
-  if (!referenceDate) {
-    return { type: "temporal_in_range", passed: true, message: "No reference_date, skipped", temporal_metadata_source: "none" };
-  }
-
-  // Gating: if cited_ids_exist already failed, skip temporal check
-  if (citedIdsFailed) {
-    return {
-      type: "temporal_in_range",
-      passed: false,
-      message: "Skipped: cited_ids_exist failed — temporal validation unreliable on phantom IDs",
-      temporal_metadata_source: "none",
-    };
-  }
+  if (!referenceDate) return { type: "temporal_in_range", passed: true, message: "No reference_date, skipped", temporal_metadata_source: "none" };
+  if (citedIdsFailed) return { type: "temporal_in_range", passed: false, message: "Skipped: cited_ids_exist failed", temporal_metadata_source: "none" };
 
   const citations = extractCitations(response, targetFunction);
   const kbCitations = citations.filter(c => c.source_type === "kb");
+  if (kbCitations.length === 0) return { type: "temporal_in_range", passed: true, message: "No KB citations to validate temporally", temporal_metadata_source: "none" };
 
-  if (kbCitations.length === 0) {
-    return {
-      type: "temporal_in_range",
-      passed: true,
-      message: "No KB citations to validate temporally",
-      temporal_metadata_source: "none",
-    };
-  }
-
-  // Normalize reference_date to midnight UTC
   const refDate = normalizeReferenceDate(referenceDate);
-
-  // Split: citations with inline metadata vs those without
   const withMeta = kbCitations.filter(c => c.effective_from != null || c.effective_to != null);
   const withoutMeta = kbCitations.filter(c => c.effective_from == null && c.effective_to == null);
 
   let metadataSource: TemporalMetadataSource;
-  // Deduplicate by doc_id: inline wins over DB
-  const citationsMap = new Map<string, {
-    doc_id: string;
-    title: string;
-    effective_from: string | null;
-    effective_to: string | null;
-  }>();
+  const citationsMap = new Map<string, { doc_id: string; title: string; effective_from: string | null; effective_to: string | null }>();
 
-  // Add inline first (they take priority)
   for (const c of withMeta) {
     if (!citationsMap.has(c.doc_id)) {
-      citationsMap.set(c.doc_id, {
-        doc_id: c.doc_id,
-        title: c.title,
-        effective_from: c.effective_from ?? null,
-        effective_to: c.effective_to ?? null,
-      });
+      citationsMap.set(c.doc_id, { doc_id: c.doc_id, title: c.title, effective_from: c.effective_from ?? null, effective_to: c.effective_to ?? null });
     }
   }
 
   if (withoutMeta.length === 0) {
     metadataSource = "inline";
   } else {
-    // Fetch from DB only for doc_ids not already covered by inline
-    const missingDocIds = [...new Set(
-      withoutMeta.map(c => c.doc_id).filter(id => !citationsMap.has(id))
-    )];
-
+    const missingDocIds = [...new Set(withoutMeta.map(c => c.doc_id).filter(id => !citationsMap.has(id)))];
     if (missingDocIds.length === 0) {
       metadataSource = "inline";
     } else {
-      const { data: docs, error } = await supabase
-        .from("knowledge_base")
-        .select("id, title, effective_from, effective_to")
-        .in("id", missingDocIds);
-
-      if (error) {
-        return {
-          type: "temporal_in_range",
-          passed: false,
-          message: `DB error checking temporal range: ${error.message}`,
-          temporal_metadata_source: "db_fallback",
-        };
-      }
-
-      // Check if DB returned all requested IDs
+      const { data: docs, error } = await supabase.from("knowledge_base").select("id, title, effective_from, effective_to").in("id", missingDocIds);
+      if (error) return { type: "temporal_in_range", passed: false, message: `DB error: ${error.message}`, temporal_metadata_source: "db_fallback" };
       const foundIds = new Set((docs || []).map(d => d.id));
       const notFound = missingDocIds.filter(id => !foundIds.has(id));
-      if (notFound.length > 0) {
-        return {
-          type: "temporal_in_range",
-          passed: false,
-          message: `${notFound.length} cited KB doc(s) not found in DB for temporal check`,
-          details: { missing_doc_ids: notFound },
-          temporal_metadata_source: "db_fallback",
-        };
-      }
-
+      if (notFound.length > 0) return { type: "temporal_in_range", passed: false, message: `${notFound.length} cited KB doc(s) not found`, details: { missing_doc_ids: notFound }, temporal_metadata_source: "db_fallback" };
       for (const d of docs || []) {
-        if (!citationsMap.has(d.id)) {
-          citationsMap.set(d.id, {
-            doc_id: d.id,
-            title: d.title,
-            effective_from: d.effective_from,
-            effective_to: d.effective_to,
-          });
-        }
+        if (!citationsMap.has(d.id)) citationsMap.set(d.id, { doc_id: d.id, title: d.title, effective_from: d.effective_from, effective_to: d.effective_to });
       }
-
       metadataSource = withMeta.length > 0 ? "hybrid" : "db_fallback";
     }
   }
 
   const citationsToCheck = [...citationsMap.values()];
-  const violations: Array<{
-    doc_id: string;
-    title: string;
-    effective_from: string | null;
-    effective_to: string | null;
-    reason: string;
-  }> = [];
+  const violations: Array<{ doc_id: string; title: string; effective_from: string | null; effective_to: string | null; reason: string }> = [];
 
   for (const doc of citationsToCheck) {
     const check = isEffectiveOn(doc.effective_from, doc.effective_to, refDate);
-    if (!check.valid) {
-      violations.push({ ...doc, reason: check.reason! });
-    }
+    if (!check.valid) violations.push({ ...doc, reason: check.reason! });
   }
 
   return {
@@ -455,17 +314,12 @@ async function checkTemporalInRange(
     passed: violations.length === 0,
     message: violations.length === 0
       ? `All ${citationsToCheck.length} KB docs temporally valid for ${referenceDate} (${metadataSource})`
-      : `${violations.length} temporal violation(s) among ${citationsToCheck.length} KB docs`,
-    details: violations.length > 0
-      ? { violations, metadata_source: metadataSource }
-      : { metadata_source: metadataSource },
+      : `${violations.length} temporal violation(s)`,
+    details: violations.length > 0 ? { violations, metadata_source: metadataSource } : { metadata_source: metadataSource },
     temporal_metadata_source: metadataSource,
   };
 }
 
-/**
- * agent_schema_valid
- */
 function checkAgentSchemaValid(response: Record<string, unknown>, targetFunction: string): InvariantResult {
   if (targetFunction === "vector-search") {
     const hasKb = Array.isArray(response.kb);
@@ -484,18 +338,83 @@ function checkAgentSchemaValid(response: Record<string, unknown>, targetFunction
 
   if (targetFunction === "ai-analyze") {
     const hasResult = typeof response.analysis_result === "string" || typeof response.result === "string";
-    return {
-      type: "agent_schema_valid",
-      passed: hasResult,
-      message: hasResult ? "Response has analysis result" : "Missing analysis_result/result field",
-    };
+    return { type: "agent_schema_valid", passed: hasResult, message: hasResult ? "Response has analysis result" : "Missing analysis_result/result field" };
   }
 
   const hasContent = Object.keys(response).length > 0;
+  return { type: "agent_schema_valid", passed: hasContent, message: hasContent ? "Response is non-empty" : "Empty response" };
+}
+
+// ── NEW: P0 Hardening invariants ─────────────────────────────────────────────
+
+/** Check HTTP status matches expected */
+function checkHttpStatus(actual: number, params?: Record<string, unknown>): InvariantResult {
+  const expected = (params?.expected as number) || 200;
   return {
-    type: "agent_schema_valid",
-    passed: hasContent,
-    message: hasContent ? "Response is non-empty" : "Empty response",
+    type: "http_status_check",
+    passed: actual === expected,
+    message: actual === expected
+      ? `HTTP ${actual} matches expected ${expected}`
+      : `HTTP ${actual} does not match expected ${expected}`,
+    details: { actual, expected },
+  };
+}
+
+/** Check a response header contains a substring */
+function checkHeader(headers: Record<string, string>, params?: Record<string, unknown>): InvariantResult {
+  const headerName = ((params?.header as string) || "").toLowerCase();
+  const contains = ((params?.contains as string) || "").toLowerCase();
+  const headerValue = (headers[headerName] || "").toLowerCase();
+  const passed = headerValue.includes(contains);
+  return {
+    type: "header_check",
+    passed,
+    message: passed
+      ? `Header '${headerName}' contains '${contains}'`
+      : `Header '${headerName}' = '${headerValue}' does not contain '${contains}'`,
+    details: { header: headerName, expected_contains: contains, actual: headerValue },
+  };
+}
+
+/** Check a response body field equals expected value */
+function checkField(body: Record<string, unknown>, params?: Record<string, unknown>): InvariantResult {
+  const field = (params?.field as string) || "";
+  const equals = params?.equals;
+  const actual = body[field];
+  const passed = actual === equals;
+  return {
+    type: "field_check",
+    passed,
+    message: passed
+      ? `body.${field} = '${equals}' ✓`
+      : `body.${field} = '${actual}', expected '${equals}'`,
+    details: { field, expected: equals, actual },
+  };
+}
+
+/** For multi_call: check the last call's status and reason */
+function checkMultiCallSequence(callResults: CallResult[], params?: Record<string, unknown>): InvariantResult {
+  const expectedLastStatus = (params?.expected_last_status as number) || 429;
+  const expectedLastReason = (params?.expected_last_reason as string) || "";
+
+  if (callResults.length === 0) {
+    return { type: "multi_call_status_sequence", passed: false, message: "No call results" };
+  }
+
+  const last = callResults[callResults.length - 1];
+  const statusMatch = last.status === expectedLastStatus;
+  const reasonMatch = !expectedLastReason || (last.body?.reason === expectedLastReason || last.body?.error === expectedLastReason);
+  const passed = statusMatch && reasonMatch;
+
+  const statuses = callResults.map(r => r.status);
+
+  return {
+    type: "multi_call_status_sequence",
+    passed,
+    message: passed
+      ? `Last call returned ${expectedLastStatus} with reason '${expectedLastReason}'. Sequence: [${statuses.join(",")}]`
+      : `Expected last status=${expectedLastStatus} reason='${expectedLastReason}', got status=${last.status} body=${JSON.stringify(last.body).substring(0, 200)}. Sequence: [${statuses.join(",")}]`,
+    details: { statuses, last_body: last.body, expected_last_status: expectedLastStatus, expected_last_reason: expectedLastReason },
   };
 }
 
@@ -511,6 +430,75 @@ function extractText(response: Record<string, unknown>): string {
       .join(" ");
   }
   return JSON.stringify(response);
+}
+
+function headersToRecord(headers: Headers): Record<string, string> {
+  const rec: Record<string, string> = {};
+  headers.forEach((v, k) => { rec[k.toLowerCase()] = v; });
+  return rec;
+}
+
+// ── Call helper ──────────────────────────────────────────────────────────────
+
+async function callEdgeFunction(
+  supabaseUrl: string,
+  serviceKey: string,
+  targetFunction: string,
+  payload: Record<string, unknown>,
+): Promise<CallResult> {
+  const method = (payload._method as string) || "POST";
+  const extraHeaders = (payload._headers as Record<string, string>) || {};
+
+  // Strip meta fields from body
+  const body = { ...payload };
+  delete body._method;
+  delete body._headers;
+  delete body._call_count;
+
+  const targetUrl = `${supabaseUrl}/functions/v1/${targetFunction}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const t0 = Date.now();
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceKey}`,
+      ...extraHeaders,
+    };
+
+    const fetchOpts: RequestInit = {
+      method,
+      headers,
+      signal: controller.signal,
+    };
+
+    // Don't send body for OPTIONS/GET
+    if (method !== "OPTIONS" && method !== "GET") {
+      fetchOpts.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(targetUrl, fetchOpts);
+    const latencyMs = Date.now() - t0;
+
+    let responseBody: Record<string, unknown> = {};
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try { responseBody = await response.json(); } catch { responseBody = {}; }
+    } else {
+      const text = await response.text();
+      responseBody = { _raw_text: text };
+    }
+
+    return {
+      status: response.status,
+      headers: headersToRecord(response.headers),
+      body: responseBody,
+      latencyMs,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -560,7 +548,7 @@ serve(async (req) => {
 
     if (runErr) return json({ error: `Failed to create run: ${runErr.message}` }, 500);
 
-    log("eval-runner", "Starting eval run v2.1", { run_id: run.id, total_cases: cases.length });
+    log("eval-runner", "Starting eval run v2.2", { run_id: run.id, total_cases: cases.length });
 
     let passed = 0;
     let failed = 0;
@@ -570,48 +558,40 @@ serve(async (req) => {
       status: string;
       invariants: InvariantResult[];
       latency_ms: number;
+      http_status?: number;
       temporal_metadata_source?: string;
     }> = [];
 
     for (const evalCase of cases) {
       const t0 = Date.now();
       try {
-        const targetUrl = `${supabaseUrl}/functions/v1/${evalCase.target_function}`;
-        const response = await callInternalFunction(targetUrl, evalCase.input_payload, {
-          timeoutMs: 60_000,
-        });
+        const caseMode = evalCase.mode || "single_call";
+        const inputPayload = evalCase.input_payload as Record<string, unknown>;
 
-        const latencyMs = Date.now() - t0;
-        const responseBody = await response.json() as Record<string, unknown>;
+        // ── Execute call(s) ──────────────────────────────────────────────
+        let callResults: CallResult[];
 
-        if (!response.ok) {
-          failed++;
-          const result = {
-            case_name: evalCase.name,
-            status: "fail" as const,
-            invariants: [{
-              type: "function_call",
-              passed: false,
-              message: `Edge function returned ${response.status}: ${JSON.stringify(responseBody).substring(0, 500)}`,
-            }],
-            latency_ms: latencyMs,
-          };
-          results.push(result);
-
-          await supabase.from("eval_run_results").insert({
-            run_id: run.id,
-            case_id: evalCase.id,
-            status: "fail",
-            raw_response: responseBody,
-            invariant_results: result.invariants,
-            latency_ms: latencyMs,
-            error_message: `HTTP ${response.status}`,
-            temporal_metadata_source: null,
-          });
-          continue;
+        if (caseMode === "multi_call") {
+          const callCount = (inputPayload._call_count as number) || 3;
+          callResults = [];
+          for (let i = 0; i < callCount; i++) {
+            const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, evalCase.target_function, inputPayload);
+            callResults.push(result);
+            log("eval-runner", `multi_call ${i + 1}/${callCount}`, { status: result.status, fn: evalCase.target_function });
+          }
+        } else {
+          // single_call
+          const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, evalCase.target_function, inputPayload);
+          callResults = [result];
         }
 
-        // Run invariant checks
+        const totalLatency = Date.now() - t0;
+        const lastCall = callResults[callResults.length - 1];
+        const responseBody = lastCall.body;
+        const responseHeaders = lastCall.headers;
+        const httpStatus = lastCall.status;
+
+        // ── Run invariant checks ─────────────────────────────────────────
         const invariants: InvariantResult[] = [];
         const invariantDefs = (evalCase.invariants || []) as InvariantDef[];
         let temporalMetadataSource: string | undefined;
@@ -619,6 +599,21 @@ serve(async (req) => {
 
         for (const inv of invariantDefs) {
           switch (inv.type) {
+            // ── P0 Hardening invariants ──
+            case "http_status_check":
+              invariants.push(checkHttpStatus(httpStatus, inv.params));
+              break;
+            case "header_check":
+              invariants.push(checkHeader(responseHeaders, inv.params));
+              break;
+            case "field_check":
+              invariants.push(checkField(responseBody, inv.params));
+              break;
+            case "multi_call_status_sequence":
+              invariants.push(checkMultiCallSequence(callResults, inv.params));
+              break;
+
+            // ── Existing invariants ──
             case "citations_present":
               invariants.push(checkCitationsPresent(responseBody, evalCase.target_function, inv.params));
               break;
@@ -635,13 +630,7 @@ serve(async (req) => {
               invariants.push(checkLanguageMatch(responseBody, evalCase.expected_language || undefined));
               break;
             case "temporal_in_range": {
-              const temporalResult = await checkTemporalInRange(
-                responseBody,
-                evalCase.reference_date || "",
-                supabase,
-                evalCase.target_function,
-                citedIdsFailed,
-              );
+              const temporalResult = await checkTemporalInRange(responseBody, evalCase.reference_date || "", supabase, evalCase.target_function, citedIdsFailed);
               temporalMetadataSource = temporalResult.temporal_metadata_source;
               invariants.push(temporalResult);
               break;
@@ -667,7 +656,8 @@ serve(async (req) => {
           case_name: evalCase.name,
           status: caseStatus,
           invariants,
-          latency_ms: latencyMs,
+          latency_ms: totalLatency,
+          http_status: httpStatus,
           temporal_metadata_source: temporalMetadataSource,
         });
 
@@ -675,11 +665,15 @@ serve(async (req) => {
           run_id: run.id,
           case_id: evalCase.id,
           status: caseStatus,
-          raw_response: responseBody,
+          raw_response: caseMode === "multi_call"
+            ? { calls: callResults.map(r => ({ status: r.status, body: r.body })) }
+            : responseBody,
           invariant_results: invariants,
           temporal_violations: temporalViolations.length > 0 ? temporalViolations : null,
           temporal_metadata_source: temporalMetadataSource || null,
-          latency_ms: latencyMs,
+          latency_ms: totalLatency,
+          http_status: httpStatus,
+          response_headers: responseHeaders,
         });
       } catch (caseErr) {
         const latencyMs = Date.now() - t0;
@@ -711,7 +705,7 @@ serve(async (req) => {
       completed_at: new Date().toISOString(),
     }).eq("id", run.id);
 
-    log("eval-runner", "Eval run v2.1 complete", { run_id: run.id, passed, failed, skipped });
+    log("eval-runner", "Eval run v2.2 complete", { run_id: run.id, passed, failed, skipped });
 
     return json({ run_id: run.id, passed, failed, skipped, total: cases.length, results });
   } catch (error) {
