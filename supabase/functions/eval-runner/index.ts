@@ -518,9 +518,14 @@ function preprocessPayload(
   const p = { ...payload };
   const headers = { ...((p._headers as Record<string, string>) || {}) };
 
-  // If payload references __EVAL_CLIENT_JWT__ placeholder, replace with actual JWT
-  if (headers.Authorization === "__EVAL_CLIENT_JWT__" && evalJwt) {
-    headers.Authorization = `Bearer ${evalJwt}`;
+  // Replace __EVAL_CLIENT_JWT__ placeholder with actual JWT (both cases)
+  if (evalJwt) {
+    if (headers.Authorization === "__EVAL_CLIENT_JWT__") {
+      headers.Authorization = `Bearer ${evalJwt}`;
+    }
+    if (headers.authorization === "__EVAL_CLIENT_JWT__") {
+      headers.authorization = `Bearer ${evalJwt}`;
+    }
   }
 
   p._headers = headers;
