@@ -287,13 +287,8 @@ serve(async (req) => {
               throw new Error("PDF too large (>10MB)");
             }
 
-            let binary = '';
-            const chunkSize = 8192;
-            for (let j = 0; j < pdfBytes.length; j += chunkSize) {
-              const chunk = pdfBytes.subarray(j, Math.min(j + chunkSize, pdfBytes.length));
-              binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
-            }
-            const base64 = btoa(binary);
+            const { uint8ToBase64 } = await import("../_shared/base64.ts");
+            const base64 = uint8ToBase64(pdfBytes);
             const dataUrl = `data:application/pdf;base64,${base64}`;
 
             console.log(`PDF ${record.id} converted, size: ${Math.round(base64.length / 1024)}KB`);

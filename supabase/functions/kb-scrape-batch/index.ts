@@ -74,13 +74,8 @@ async function scrapeWithGeminiOcr(
   }
 
   // Convert to base64
-  let binary = '';
-  const chunkSize = 8192;
-  for (let j = 0; j < bytes.length; j += chunkSize) {
-    const chunk = bytes.subarray(j, Math.min(j + chunkSize, bytes.length));
-    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
-  }
-  const base64 = btoa(binary);
+  const { uint8ToBase64 } = await import("../_shared/base64.ts");
+  const base64 = uint8ToBase64(bytes);
   const dataUrl = `data:application/pdf;base64,${base64}`;
 
   console.log(`PDF downloaded: ${Math.round(base64.length / 1024)}KB, sending to Gemini OCR`);

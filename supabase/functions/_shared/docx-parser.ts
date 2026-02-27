@@ -203,11 +203,10 @@ function mimeFromFilename(name: string): string | null {
 }
 
 function uint8ToBase64(bytes: Uint8Array): string {
+  // Delegate to shared safe implementation
   let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode(...chunk);
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
 }

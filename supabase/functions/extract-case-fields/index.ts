@@ -206,13 +206,8 @@ serve(async (req) => {
           }
 
           // Convert to base64
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-            binary += String.fromCharCode(...chunk);
-          }
-          const base64 = btoa(binary);
+          const { uint8ToBase64 } = await import("../_shared/base64.ts");
+          const base64 = uint8ToBase64(bytes);
           const dataUrl = `data:${mimeType};base64,${base64}`;
 
           console.log(`Image ${file.original_filename} encoded (${Math.round(base64.length / 1024)}KB)`);
