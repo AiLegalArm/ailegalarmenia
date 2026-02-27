@@ -130,6 +130,18 @@ serve(async (req) => {
       return errorResponse("Unauthorized", 401, requestId);
     }
 
+    // === RATE LIMITING (P0) ===
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const supabaseServiceClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const rateCheck = await checkRateLimits(supabaseServiceClient, user.id, "ocr-process");
+    if (!rateCheck.allowed) {
+      return errorResponse(rateCheck.message || "Rate limit exceeded", rateCheck.status || 429, requestId);
+    }
+    // === END RATE LIMITING ===
+
     const body = await req.json();
     const fileUrl = body.fileUrl || body.imageUrl;
     const fileName: string = body.fileName || 'document';

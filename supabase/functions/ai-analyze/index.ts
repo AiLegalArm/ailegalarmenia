@@ -204,6 +204,17 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // === RATE LIMITING (P0) ===
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const rateCheck = await checkRateLimits(supabase, user.id, "ai-analyze");
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: rateCheck.message }),
+        { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    // === END RATE LIMITING ===
+
     // RAG: Search knowledge base for relevant context — HYBRID: vector + keyword
     let ragContext = "";
     const sourcesUsed: Array<{ title: string; category: string; source_name: string }> = [];
