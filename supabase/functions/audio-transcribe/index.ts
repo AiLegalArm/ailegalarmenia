@@ -132,24 +132,28 @@ serve(async (req) => {
           content: [
             {
               type: "text",
-              text: `You are a professional transcription service specializing in Armenian and Russian legal proceedings.
-Transcribe the audio file as a dialogue with speaker labels and timestamps.
-
-IMPORTANT RULES:
-- Add a timestamp [MM:SS] at the beginning of EACH speaker turn (e.g. [0:00], [0:15], [1:32])
-- Identify different speakers and label them as "Спикер 1:", "Спикер 2:", "Спикер 3:" etc.
-- Each new speaker turn starts on a new line
-- Format: [MM:SS] Спикер N: text
-- If only one speaker, still use "Спикер 1:"
-- Preserve all spoken words exactly as said
-- Include legal terminology correctly
-- If multiple languages are spoken, transcribe each in its original language
-- Output ONLY the dialogue transcription, nothing else
-
-Example format:
-[0:00] Спикер 1: Добрый день, суд заседание начинается.
-[0:08] Спикер 2: Ваша честь, защита готова.
-[0:12] Спикер 1: Хорошо, приступаем.`,
+              text: [
+                "You are a professional transcription service specializing in Armenian and Russian legal proceedings.",
+                "Transcribe the audio file as a dialogue with speaker labels and timestamps every 5 seconds.",
+                "",
+                "IMPORTANT RULES:",
+                "- Add a timestamp [MM:SS] every 5 seconds throughout the transcription (e.g. [0:00], [0:05], [0:10], [0:15], [1:00], [1:05])",
+                "- Even if the same speaker continues, insert a new timestamp line every 5 seconds",
+                "- Identify different speakers and label them with Armenian word for Speaker + number",
+                "- Use the label format: \u054d\u057a\u056b\u056f\u0565\u0580 1, \u054d\u057a\u056b\u056f\u0565\u0580 2, etc.",
+                "- Each new timestamp+speaker segment starts on a new line",
+                "- Format: [MM:SS] \u054d\u057a\u056b\u056f\u0565\u0580 N: text",
+                "- If only one speaker, still use \u054d\u057a\u056b\u056f\u0565\u0580 1:",
+                "- Preserve all spoken words exactly as said",
+                "- Include legal terminology correctly",
+                "- If multiple languages are spoken, transcribe each in its original language",
+                "- Output ONLY the dialogue transcription, nothing else",
+                "",
+                "Example:",
+                "[0:00] \u054d\u057a\u056b\u056f\u0565\u0580 1: \u0532\u0561\u0580\u0565\u0582 \u0585\u0580, \u0576\u056b\u057d\u057f\u0568 \u057d\u056f\u057d\u057e\u0578\u0582\u0574 \u0567:",
+                "[0:05] \u054d\u057a\u056b\u056f\u0565\u0580 2: \u0544\u0565\u0576\u0584 \u057a\u0561\u057f\u0580\u0561\u057d\u057f \u0565\u0576\u0584:",
+                "[0:10] \u054d\u057a\u056b\u056f\u0565\u0580 1: \u053c\u0561\u057e, \u057d\u056f\u057d\u0565\u0576\u0584:",
+              ].join("\n"),
             },
             {
               type: "image_url",

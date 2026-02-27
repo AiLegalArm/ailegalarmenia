@@ -67,22 +67,39 @@ const SPEAKER_STYLES = [
 ];
 
 function parseDialogue(text: string) {
-  const lines = text.split('\n');
+  const combined = text.replace(/\r\n/g, '\n');
+  
+  // Broad speaker regex supporting Armenian, Russian, English labels
+  const speakerPattern = '(?:\u054d\u057a\u056b\u056f\u0565\u0580|\u0421\u043f\u0438\u043a\u0435\u0440|Speaker|\u0413\u043e\u0432\u043e\u0440\u044f\u0449\u0438\u0439|\u053d\u0578\u057d\u0578\u0572)\\s*\\d+';
+  
+  // Try splitting on [MM:SS] Speaker patterns
+  const splitRegex = new RegExp(`(?=\\[\\d{1,2}:\\d{2}\\]\\s*(?:${speakerPattern})\\s*:)`, 'gi');
+  const parts = combined.split(splitRegex);
+  
+  // If no timestamp splits, try newline-based
+  const lines = parts.length > 1 ? parts : combined.split('\n');
+  
+  const speakerRegex = new RegExp(`^(?:\\[(\\d{1,2}:\\d{2})\\]\\s*)?(${speakerPattern})\\s*:\\s*([\\s\\S]*)$`, 'i');
+  
   const speakerMap: Record<string, number> = {};
   let speakerCount = 0;
 
   return lines.map((line) => {
-    const match = line.match(/^((?:Спикер|Speaker|Говорящий|Խոսող)\s*\d+)\s*:\s*(.*)$/i);
-    if (match) {
-      const speaker = match[1];
-      const content = match[2];
+    const trimmed = line.trim();
+    if (!trimmed) return { type: 'plain' as const, content: '' };
+
+    const m = trimmed.match(speakerRegex);
+    if (m) {
+      const timestamp = m[1] || null;
+      const speaker = m[2];
+      const content = m[3].trim();
       if (!(speaker in speakerMap)) {
         speakerMap[speaker] = speakerCount % SPEAKER_STYLES.length;
         speakerCount++;
       }
-      return { type: 'dialogue' as const, speaker, content, styleIdx: speakerMap[speaker] };
+      return { type: 'dialogue' as const, speaker, content, timestamp, styleIdx: speakerMap[speaker] };
     }
-    return { type: 'plain' as const, content: line };
+    return { type: 'plain' as const, content: trimmed };
   });
 }
 
@@ -226,9 +243,16 @@ export function AudioTranscriptionResult({ transcription, caseId }: AudioTranscr
                   const style = SPEAKER_STYLES[line.styleIdx];
                   return (
                     <div key={idx} className={`rounded-lg border p-2.5 ${style.bubble}`}>
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${style.label}`}>
-                        {line.speaker}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-semibold uppercase tracking-wide ${style.label}`}>
+                          {line.speaker}
+                        </span>
+                        {line.timestamp && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            [{line.timestamp}]
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm mt-1 break-words">{line.content}</p>
                     </div>
                   );
