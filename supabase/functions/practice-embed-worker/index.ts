@@ -23,9 +23,9 @@ async function sha256Hex(text: string): Promise<string> {
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const LEGACY_EMBEDDING_DIMENSIONS = 768;
-const MAX_CHARS_PER_TEXT = 12000;
+const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 5;
-const DEFAULT_BATCH = 25;
+const DEFAULT_BATCH = 2; // reduced until token-overflow stabilised
 
 // ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────
 class FatalOpenAIError extends Error {

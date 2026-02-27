@@ -14,7 +14,7 @@ async function sha256Hex(text: string): Promise<string> {
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const MAX_ATTEMPTS_BEFORE_DEAD_LETTER = 5;
-const MAX_CHARS_PER_TEXT = 12_000;
+const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 5;
 
 // ─── CORS ──────────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ serve(async (req) => {
   }
 
   try {
-    const { table, batchLimit = 10 } = await req.json();
+    const { table, batchLimit = 2 } = await req.json(); // batch=2 until token-overflow stabilised
 
     const validTables = [
       "knowledge_base", "legal_practice_kb",

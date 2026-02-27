@@ -18,7 +18,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "text-embedding-3-large";
 const MAX_BATCH_SIZE = 100;
-const MAX_CHARS_PER_TEXT = 32_000; // ~8k tokens
+const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1_000;
 
