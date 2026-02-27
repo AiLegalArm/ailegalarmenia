@@ -596,9 +596,10 @@ function buildRequestBody(
   messages: RouterMessage[]
 ): Record<string, unknown> {
   if (cfg.model.startsWith("openai/") && !cfg.model.startsWith("openai/text-embedding-")) {
+    // OpenAI GPT-5 family only supports default temperature (1).
+    // Omit temperature entirely to use the model default.
     return {
       model: cfg.model,
-      temperature: cfg.temperature,
       max_completion_tokens: cfg.max_tokens,
       messages,
     };

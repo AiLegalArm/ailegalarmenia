@@ -48,9 +48,13 @@ function buildBypassBody(
 ): Record<string, unknown> {
   const base: Record<string, unknown> = {
     model: cfg.model,
-    temperature: cfg.temperature,
     messages,
   };
+
+  // OpenAI GPT-5 family only supports default temperature — omit it
+  if (!cfg.model.startsWith("openai/") || cfg.model.startsWith("openai/text-embedding-")) {
+    base.temperature = cfg.temperature;
+  }
 
   // Provider-aware max tokens
   if (cfg.model.startsWith("openai/") && !cfg.model.startsWith("openai/text-embedding-")) {
