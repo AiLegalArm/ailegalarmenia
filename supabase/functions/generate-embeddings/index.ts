@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { buildEmbeddingText, buildChunkEmbeddingText, type EmbeddingDoc } from "../_shared/build-embedding-text.ts";
+import { encode as hexEncode } from "https://deno.land/std@0.168.0/encoding/hex.ts";
+
+// ─── SHA-256 hash for idempotency ──────────────────────────────────────────
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return new TextDecoder().decode(hexEncode(new Uint8Array(hash)));
+}
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const EMBEDDING_MODEL = "text-embedding-3-large";
@@ -175,8 +183,8 @@ serve(async (req) => {
     const selectFields = isChunkTable
       ? "id, chunk_text, chunk_type, label, embedding_attempts"
       : table === "legal_practice_kb"
-        ? "id, title, content_text, description, court_type, court_name, source_name, decision_date, case_number_anonymized, echr_case_id, practice_category, keywords, key_violations, violation_type, applied_articles, interpreted_norms, decision_map, key_paragraphs, ratio_decidendi, legal_principle, echr_principle_formula, legal_reasoning_summary, outcome, echr_article, facts_hy, judgment_hy, procedural_aspect, application_scope, limitations_of_application, embedding_attempts"
-        : "id, title, content_text, category, article_number, source_name, version_date, embedding_attempts";
+      ? "id, title, content_text, description, court_type, court_name, source_name, decision_date, case_number_anonymized, echr_case_id, practice_category, keywords, key_violations, violation_type, applied_articles, interpreted_norms, decision_map, key_paragraphs, ratio_decidendi, legal_principle, echr_principle_formula, legal_reasoning_summary, outcome, echr_article, facts_hy, judgment_hy, procedural_aspect, application_scope, limitations_of_application, embedding_attempts, content_hash, embedding"
+        : "id, title, content_text, category, article_number, source_name, version_date, embedding_attempts, content_hash, embedding";
 
     const activeFilter = isChunkTable && table === "legal_practice_kb_chunks"
       ? supabase.from(table).select(selectFields)
@@ -221,23 +229,54 @@ serve(async (req) => {
     }
 
     let processed = 0;
+    let skipped = 0;
     const errors: string[] = [];
     const now = new Date().toISOString();
 
-    // Build embedding texts using the unified builder
-    const texts = docs.map((doc) => {
-      if (isChunkTable) {
-        return buildChunkEmbeddingText(
-          { chunk_text: doc.chunk_text || "", chunk_type: doc.chunk_type, label: doc.label },
-          doc.title,
-        );
+    // Build embedding texts and compute hashes for idempotency
+    const texts: string[] = [];
+    const hashes: string[] = [];
+    const skipFlags: boolean[] = [];
+
+    for (const doc of docs) {
+      const text = isChunkTable
+        ? buildChunkEmbeddingText(
+            { chunk_text: doc.chunk_text || "", chunk_type: doc.chunk_type, label: doc.label },
+            doc.title,
+          )
+        : buildEmbeddingText(doc as EmbeddingDoc);
+      texts.push(text);
+
+      const hash = await sha256Hex(text);
+      hashes.push(hash);
+
+      // Idempotency: skip if content unchanged and embedding already exists
+      const docHash = doc.content_hash;
+      const hasEmbedding = doc.embedding !== null && doc.embedding !== undefined;
+      if (docHash === hash && hasEmbedding) {
+        skipFlags.push(true);
+        // Mark as success silently (no OpenAI call)
+        await supabase.from(table).update({
+          embedding_status: "success",
+          embedding_last_attempt: now,
+          embedding_error: null,
+        }).eq("id", doc.id);
+        skipped++;
+        console.log(`[generate-embeddings] skip (idempotent): id=${doc.id} table=${table}`);
+      } else {
+        skipFlags.push(false);
       }
-      return buildEmbeddingText(doc as EmbeddingDoc);
-    });
+    }
+
+    // Filter only docs that need embedding
+    const docsToEmbed = docs.filter((_, i) => !skipFlags[i]);
+    const textsToEmbed = texts.filter((_, i) => !skipFlags[i]);
+    const hashesToEmbed = hashes.filter((_, i) => !skipFlags[i]);
 
     let vectors: number[][] | null = null;
+    if (textsToEmbed.length > 0) {
     try {
-      vectors = await getEmbeddings(texts);
+      vectors = await getEmbeddings(textsToEmbed);
       console.log(
         `[generate-embeddings] batch ok: vectors=${vectors.length} dim=${vectors[0]?.length} table=${table}`,
       );
@@ -261,9 +300,10 @@ serve(async (req) => {
       }
       console.error(`[generate-embeddings] batch failed, falling back to individual: table=${table}`);
     }
+    } // end if textsToEmbed.length > 0
 
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i];
+    for (let i = 0; i < docsToEmbed.length; i++) {
+      const doc = docsToEmbed[i];
       const attempts = (doc.embedding_attempts || 0) + 1;
 
       try {
@@ -273,7 +313,7 @@ serve(async (req) => {
           embedding = vectors[i];
         } else {
           // Individual fallback using the same unified builder
-          const fallbackText = texts[i];
+          const fallbackText = textsToEmbed[i];
           const fallback = await getEmbeddings([fallbackText]);
           embedding = fallback[0];
         }
@@ -288,6 +328,7 @@ serve(async (req) => {
             embedding_attempts: attempts,
             embedding_last_attempt: now,
             embedding_error: null,
+            content_hash: hashesToEmbed[i],
           })
           .eq("id", doc.id);
 
@@ -353,6 +394,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         processedDocs: processed,
+        skippedIdempotent: skipped,
         totalRemaining: remaining || 0,
         deadLetterCount: deadLetterCount || 0,
         model: EMBEDDING_MODEL,
