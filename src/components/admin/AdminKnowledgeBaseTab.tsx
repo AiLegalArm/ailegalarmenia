@@ -71,9 +71,6 @@ export function AdminKnowledgeBaseTab() {
   const [retryCountdown, setRetryCountdown] = useState(0);
   const [failedIds, setFailedIds] = useState<string[]>([]);
 
-  // Chunk backfill state
-  const [chunkBackfillRunning, setChunkBackfillRunning] = useState(false);
-  const [chunkBackfillStats, setChunkBackfillStats] = useState({ processed: 0, remaining: 0, chunks: 0 });
 
   const { 
     documents, 
@@ -262,37 +259,6 @@ export function AdminKnowledgeBaseTab() {
     await processBatch(allIds);
   }, [scrapePaused, processBatch]);
 
-  // ── Chunk backfill logic ────────────────────────────────────────
-  const startChunkBackfill = useCallback(async () => {
-    setChunkBackfillRunning(true);
-    setChunkBackfillStats({ processed: 0, remaining: 0, chunks: 0 });
-    let totalProcessed = 0;
-    let totalChunks = 0;
-    let remaining = Infinity;
-
-    try {
-      while (remaining > 0) {
-        const { data, error } = await supabase.functions.invoke('kb-backfill-chunks', {
-          body: { table: 'knowledge_base', batchLimit: 10 },
-        });
-        if (error) throw error;
-
-        const batchProcessed = data?.processedDocs ?? 0;
-        remaining = data?.totalRemaining ?? 0;
-        totalProcessed += batchProcessed;
-        totalChunks += data?.totalChunksInserted ?? 0;
-
-        setChunkBackfillStats({ processed: totalProcessed, remaining, chunks: totalChunks });
-
-        if (batchProcessed === 0) break;
-      }
-      toast.success(`Chunking complete: ${totalProcessed} docs, ${totalChunks} chunks created`);
-    } catch (err) {
-      toast.error(`Chunking error: ${err instanceof Error ? err.message : 'Unknown'}`);
-    } finally {
-      setChunkBackfillRunning(false);
-    }
-  }, []);
 
   return (
     <>
@@ -330,14 +296,6 @@ export function AdminKnowledgeBaseTab() {
               >
                 {scrapeRunning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Zap className="mr-1.5 h-4 w-4" />}
                 <span className="text-xs sm:text-sm">Scrape PDFs</span>
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={startChunkBackfill} 
-                disabled={chunkBackfillRunning}
-              >
-                {chunkBackfillRunning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Zap className="mr-1.5 h-4 w-4" />}
-                <span className="text-xs sm:text-sm">Backfill Chunks</span>
               </Button>
             </div>
           </CardContent>
@@ -379,26 +337,6 @@ export function AdminKnowledgeBaseTab() {
                   </>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Chunk Backfill Progress */}
-        {(chunkBackfillRunning || chunkBackfillStats.chunks > 0) && (
-          <Card>
-            <CardContent className="pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">
-                    KB Chunking: {chunkBackfillStats.processed} docs, {chunkBackfillStats.chunks} chunks
-                  </span>
-                </div>
-                {chunkBackfillStats.remaining > 0 && (
-                  <Badge variant="default" className="text-xs">{chunkBackfillStats.remaining} remaining</Badge>
-                )}
-              </div>
-              {chunkBackfillRunning && <Progress className="h-2" />}
             </CardContent>
           </Card>
         )}

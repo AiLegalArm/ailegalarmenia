@@ -354,49 +354,6 @@ export function LegalPracticeKB() {
     }
   };
 
-  const [bulkChunkRunning, setBulkChunkRunning] = useState(false);
-  const [bulkChunkProgress, setBulkChunkProgress] = useState({ done: 0, total: 0 });
-
-  const handleBulkChunk = async () => {
-    if (bulkChunkRunning) return;
-    setBulkChunkRunning(true);
-    setBulkChunkProgress({ done: 0, total: 0 });
-    
-    let totalChunked = 0;
-    let consecutiveEmpty = 0;
-    
-    while (consecutiveEmpty < 3) {
-      try {
-        const { data, error } = await supabase.functions.invoke('kb-backfill-chunks', {
-          body: { chunkSize: 8000, batchLimit: 10 },
-        });
-        
-        if (error) throw error;
-        
-        const inserted = data?.totalChunksInserted || 0;
-        totalChunked += inserted;
-        setBulkChunkProgress({ done: totalChunked, total: data?.totalRemaining || 0 });
-        
-        if (inserted === 0) consecutiveEmpty++;
-        else consecutiveEmpty = 0;
-        
-        if (data?.totalRemaining === 0 || !data?.hint) break;
-        
-        await new Promise(r => setTimeout(r, 500));
-      } catch (err) {
-        console.error('Bulk chunk error:', err);
-        consecutiveEmpty++;
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    }
-    
-    setBulkChunkRunning(false);
-    if (totalChunked > 0) {
-      toast.success(`Chunking: ${totalChunked} chunks created`);
-    } else {
-      toast.info('All documents already chunked');
-    }
-  };
 
   const resetForm = () => {
     setFormData(defaultFormData);
@@ -506,21 +463,6 @@ export function LegalPracticeKB() {
               ))}
             </SelectContent>
           </Select>
-          <Button 
-            variant="outline" 
-            onClick={handleBulkChunk}
-            disabled={bulkChunkRunning}
-            className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
-          >
-            {bulkChunkRunning ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Layers className="h-4 w-4 mr-2" />
-            )}
-            {bulkChunkRunning 
-              ? `Chunks: ${bulkChunkProgress.done}`
-              : `Chunking${filterCategory !== 'all' ? ` (${t(categoryKeys[filterCategory])})` : ''}`}
-          </Button>
           <Button 
             variant="outline" 
             onClick={() => setBulkImportOpen(true)}
