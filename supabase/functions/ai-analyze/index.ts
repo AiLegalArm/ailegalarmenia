@@ -469,14 +469,7 @@ serve(async (req) => {
                   } else if (fileContentsForVision.length >= MAX_VISION_IMAGES) {
                     console.warn(`[ai-analyze] Vision image limit (${MAX_VISION_IMAGES}) reached, skipping ${fileName}`);
                   } else {
-                    // Chunked base64 encoding to avoid OOM with spread operator
-                    let binary = '';
-                    const chunkSize = 8192;
-                    for (let i = 0; i < bytes.length; i += chunkSize) {
-                      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-                      binary += String.fromCharCode(...chunk);
-                    }
-                    const base64 = btoa(binary);
+                    const base64 = (await import("../_shared/base64.ts")).uint8ToBase64(bytes);
 
                     fileContentsForVision.push({
                       name: fileName,

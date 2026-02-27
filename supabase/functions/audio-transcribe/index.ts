@@ -108,12 +108,8 @@ serve(async (req) => {
 
     // Convert to base64
     const uint8Array = new Uint8Array(audioBuffer);
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      binary += String.fromCharCode(...uint8Array.subarray(i, i + chunkSize));
-    }
-    const base64Audio = btoa(binary);
+    const { uint8ToBase64 } = await import("../_shared/base64.ts");
+    const base64Audio = uint8ToBase64(uint8Array);
 
     // Determine MIME type
     const ext = fileName?.split(".").pop()?.toLowerCase() || "mp3";

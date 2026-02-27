@@ -282,13 +282,8 @@ serve(async (req) => {
     } else if (!imageContent && fileBuffer) {
       // PDF or image from URL → base64
       const bytes = new Uint8Array(fileBuffer);
-      let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-        binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
-      }
-      const base64 = btoa(binary);
+      const { uint8ToBase64 } = await import("../_shared/base64.ts");
+      const base64 = uint8ToBase64(bytes);
 
       let mimeType = 'image/jpeg';
       if (isPdf) mimeType = 'application/pdf';
