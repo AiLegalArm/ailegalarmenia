@@ -2073,6 +2073,33 @@ export type Database = {
           },
         ]
       }
+      role_limits: {
+        Row: {
+          created_at: string
+          hourly_limit: number
+          monthly_cost_limit: number
+          monthly_token_limit: number
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          hourly_limit?: number
+          monthly_cost_limit?: number
+          monthly_token_limit?: number
+          role: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          hourly_limit?: number
+          monthly_cost_limit?: number
+          monthly_token_limit?: number
+          role?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       team_members: {
         Row: {
           created_at: string
@@ -2430,6 +2457,13 @@ export type Database = {
           service_type: string
           total_cost: number
           total_requests: number
+          total_tokens: number
+        }[]
+      }
+      get_monthly_usage_summary: {
+        Args: { _month_start: string; _user_id: string }
+        Returns: {
+          total_cost: number
           total_tokens: number
         }[]
       }

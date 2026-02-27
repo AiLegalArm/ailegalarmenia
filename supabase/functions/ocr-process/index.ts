@@ -30,7 +30,10 @@ function computeCost(model: string, inputTokens: number, outputTokens: number): 
   };
 }
 
-const corsHeaders = {
+// CORS handled via handleCors in serve() below; corsHeaders is set per-request.
+// This const is kept for legacy error/json response helpers that need it before handleCors runs.
+import { handleCors as _handleCorsOcr } from "../_shared/edge-security.ts";
+let corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -107,9 +110,10 @@ JSON schema:
 // ─── Main handler ───────────────────────────────────────────────────────────
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  // Centralized CORS handling
+  const corsResult = _handleCorsOcr(req);
+  if (corsResult.errorResponse) return corsResult.errorResponse;
+  if (corsResult.corsHeaders) corsHeaders = corsResult.corsHeaders;
 
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
 
