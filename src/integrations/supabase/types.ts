@@ -919,6 +919,7 @@ export type Database = {
           input_payload: Json
           invariants: Json
           is_active: boolean
+          mode: string
           name: string
           reference_date: string | null
           suite_id: string
@@ -934,6 +935,7 @@ export type Database = {
           input_payload?: Json
           invariants?: Json
           is_active?: boolean
+          mode?: string
           name: string
           reference_date?: string | null
           suite_id: string
@@ -949,6 +951,7 @@ export type Database = {
           input_payload?: Json
           invariants?: Json
           is_active?: boolean
+          mode?: string
           name?: string
           reference_date?: string | null
           suite_id?: string
@@ -971,10 +974,12 @@ export type Database = {
           case_id: string
           created_at: string
           error_message: string | null
+          http_status: number | null
           id: string
           invariant_results: Json
           latency_ms: number | null
           raw_response: Json | null
+          response_headers: Json | null
           run_id: string
           status: string
           temporal_metadata_source: string | null
@@ -984,10 +989,12 @@ export type Database = {
           case_id: string
           created_at?: string
           error_message?: string | null
+          http_status?: number | null
           id?: string
           invariant_results?: Json
           latency_ms?: number | null
           raw_response?: Json | null
+          response_headers?: Json | null
           run_id: string
           status?: string
           temporal_metadata_source?: string | null
@@ -997,10 +1004,12 @@ export type Database = {
           case_id?: string
           created_at?: string
           error_message?: string | null
+          http_status?: number | null
           id?: string
           invariant_results?: Json
           latency_ms?: number | null
           raw_response?: Json | null
+          response_headers?: Json | null
           run_id?: string
           status?: string
           temporal_metadata_source?: string | null
