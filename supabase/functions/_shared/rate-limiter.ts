@@ -24,18 +24,24 @@ export const MODEL_PRICING: Record<string, { input_per_1k: number; output_per_1k
  * Compute cost from model + token usage.
  * Returns { cost_usd, cost_unknown }.
  */
+/**
+ * Compute cost from model + token usage.
+ * Returns { cost_usd, cost_estimated }.
+ * cost_estimated=true when the model isn't in the pricing table
+ * (the tokens still count toward monthly caps).
+ */
 export function computeCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
-): { cost_usd: number; cost_unknown: boolean } {
+): { cost_usd: number; cost_estimated: boolean } {
   const pricing = MODEL_PRICING[model];
-  if (!pricing) return { cost_usd: 0, cost_unknown: true };
+  if (!pricing) return { cost_usd: 0, cost_estimated: true };
   return {
     cost_usd:
       (inputTokens / 1000) * pricing.input_per_1k +
       (outputTokens / 1000) * pricing.output_per_1k,
-    cost_unknown: false,
+    cost_estimated: false,
   };
 }
 

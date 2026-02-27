@@ -21,12 +21,12 @@ const MODEL_PRICING: Record<string, { input_per_1k: number; output_per_1k: numbe
   "openai/gpt-5-mini":            { input_per_1k: 0.0004,   output_per_1k: 0.0016 },
 };
 
-function computeCost(model: string, inputTokens: number, outputTokens: number): { cost_usd: number; cost_unknown: boolean } {
+function computeCost(model: string, inputTokens: number, outputTokens: number): { cost_usd: number; cost_estimated: boolean } {
   const pricing = MODEL_PRICING[model];
-  if (!pricing) return { cost_usd: 0, cost_unknown: true };
+  if (!pricing) return { cost_usd: 0, cost_estimated: true };
   return {
     cost_usd: (inputTokens / 1000) * pricing.input_per_1k + (outputTokens / 1000) * pricing.output_per_1k,
-    cost_unknown: false,
+    cost_estimated: false,
   };
 }
 
@@ -386,7 +386,7 @@ serve(async (req) => {
     const outputTokens = aiUsage?.completion_tokens || 0;
     const totalTokens = aiUsage?.total_tokens || (inputTokens + outputTokens);
     const modelName = (aiData.model as string) || "google/gemini-2.5-flash";
-    const { cost_usd: costUsd, cost_unknown: costUnknown } = computeCost(modelName, inputTokens, outputTokens);
+    const { cost_usd: costUsd, cost_estimated: costEstimated } = computeCost(modelName, inputTokens, outputTokens);
 
     // ─── Determine pipeline ─────────────────────────────────────────────
     let pipeline: string;
@@ -422,7 +422,7 @@ serve(async (req) => {
         confidence: confidence_score,
         pages: pages || null,
         usage_missing: usageMissing,
-        cost_unknown: costUnknown,
+        cost_estimated: costEstimated,
       }
     });
 
