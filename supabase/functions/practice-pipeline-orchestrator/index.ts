@@ -81,7 +81,7 @@ serve(async (req) => {
       const res = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ concurrency_docs: 25 }),
+        body: JSON.stringify({ concurrency_docs: 50 }),
       });
       const data = await res.json().catch(() => ({ status: res.status }));
       return data;

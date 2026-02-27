@@ -20,9 +20,9 @@ const VALID_SOURCES = ["legal_practice_kb", "knowledge_base"] as const;
 type SourceTable = typeof VALID_SOURCES[number];
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
 
   const internalKey = req.headers.get("x-internal-key");
   const expectedKey = Deno.env.get("INTERNAL_INGEST_KEY");
