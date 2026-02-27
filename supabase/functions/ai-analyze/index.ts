@@ -209,7 +209,7 @@ serve(async (req) => {
     const rateCheck = await checkRateLimits(supabase, user.id, "ai-analyze");
     if (!rateCheck.allowed) {
       return new Response(
-        JSON.stringify({ error: rateCheck.message }),
+        JSON.stringify({ error: rateCheck.reason, message: rateCheck.message, retry_after_seconds: rateCheck.reason === "hourly_limit_exceeded" ? 3600 : undefined }),
         { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

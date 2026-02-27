@@ -57,6 +57,20 @@ serve(async (req) => {
     }
     // === END AUTH GUARD ===
 
+    // === RATE LIMITING (P0) — before any body parsing or DB lookups ===
+    const supabaseServiceUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const serviceClient = createClient(supabaseServiceUrl, supabaseServiceRoleKey);
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const rateCheck = await checkRateLimits(serviceClient, user.id, "generate-document");
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: rateCheck.reason, message: rateCheck.message, retry_after_seconds: rateCheck.reason === "hourly_limit_exceeded" ? 3600 : undefined }),
+        { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    // === END RATE LIMITING ===
+
     const body = await req.json();
     const request = validateRequest(body);
     const referencesText: string = typeof body.referencesText === "string" ? body.referencesText : "";
@@ -109,20 +123,6 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
-
-    // === RATE LIMITING (P0) ===
-    const supabaseServiceUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const serviceClient = createClient(supabaseServiceUrl, supabaseServiceRoleKey);
-    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
-    const rateCheck = await checkRateLimits(serviceClient, user.id, "generate-document");
-    if (!rateCheck.allowed) {
-      return new Response(
-        JSON.stringify({ error: rateCheck.message }),
-        { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    // === END RATE LIMITING ===
 
     // Build context from case data and/or source text
     const contextText = buildContextText(request);
