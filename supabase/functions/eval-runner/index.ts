@@ -1,5 +1,5 @@
 /**
- * eval-runner — Evaluation Framework Runner (v2.4)
+ * eval-runner — Evaluation Framework Runner (v2.5)
  *
  * v2.4 changes:
  *   - apikey header uses SUPABASE_ANON_KEY (not service role)
@@ -574,8 +574,46 @@ serve(async (req) => {
     if (!cases || cases.length === 0) return json({ error: "No active eval cases in suite" }, 404);
 
     // ── Deterministic setup for P0 rate-limit tests ──────────────────────
-    const { jwt: evalJwt, setupLog } = await setupEvalClient(supabase);
+    const { userId: evalUserId, jwt: evalJwt, setupLog } = await setupEvalClient(supabase);
     log("eval-runner", "Setup complete", { setupLog });
+
+    // ── Guard: require eval env for rate_limit / budget_cap cases ────────
+    const needsEvalEnv = cases.some((c: { tags?: string[] | null }) => {
+      const tags = c.tags || [];
+      return tags.includes("rate_limit") || tags.includes("budget_cap");
+    });
+
+    if (needsEvalEnv && (!evalJwt || !evalUserId)) {
+      // Create a failed run with all cases skipped
+      const { data: failedRun } = await supabase
+        .from("eval_runs")
+        .insert({
+          suite_id,
+          status: "failed",
+          total_cases: cases.length,
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          failed: 0,
+          skipped: cases.length,
+          metadata: { version: "2.5", setup_log: setupLog, error: "missing_eval_env" },
+        })
+        .select("id")
+        .single();
+
+      if (failedRun) {
+        const skipRows = cases.map((c: { id: string }) => ({
+          run_id: failedRun.id,
+          case_id: c.id,
+          status: "skipped",
+          error_message: "missing_eval_env",
+          invariant_results: [],
+        }));
+        await supabase.from("eval_run_results").insert(skipRows);
+      }
+
+      warn("eval-runner", "Missing eval env for rate_limit/budget_cap cases", { evalUserId, hasJwt: !!evalJwt });
+      return json({ error: "missing_eval_env", required: ["EVAL_CLIENT_USER_ID", "EVAL_CLIENT_JWT"] }, 412);
+    }
 
     const { data: run, error: runErr } = await supabase
       .from("eval_runs")
@@ -584,14 +622,14 @@ serve(async (req) => {
         status: "running",
         total_cases: cases.length,
         started_at: new Date().toISOString(),
-        metadata: { version: "2.3", setup_log: setupLog },
+        metadata: { version: "2.5", setup_log: setupLog },
       })
       .select()
       .single();
 
     if (runErr) return json({ error: `Failed to create run: ${runErr.message}` }, 500);
 
-    log("eval-runner", "Starting eval run v2.3", { run_id: run.id, total_cases: cases.length });
+    log("eval-runner", "Starting eval run v2.5", { run_id: run.id, total_cases: cases.length });
 
     let passed = 0;
     let failed = 0;
@@ -718,7 +756,7 @@ serve(async (req) => {
 
     await supabase.from("eval_runs").update({ status: failed > 0 ? "failed" : "passed", passed, failed, skipped, completed_at: new Date().toISOString() }).eq("id", run.id);
 
-    log("eval-runner", "Eval run v2.3 complete", { run_id: run.id, passed, failed, skipped });
+    log("eval-runner", "Eval run v2.5 complete", { run_id: run.id, passed, failed, skipped });
 
     return json({ run_id: run.id, passed, failed, skipped, total: cases.length, setup_log: setupLog, results });
   } catch (error) {
