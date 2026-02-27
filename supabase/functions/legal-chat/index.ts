@@ -273,7 +273,7 @@ serve(async (req) => {
     const rateCheck = await checkRateLimits(supabase, user.id, "legal-chat");
     if (!rateCheck.allowed) {
       return new Response(
-        JSON.stringify({ error: rateCheck.message }),
+        JSON.stringify({ error: rateCheck.reason, message: rateCheck.message, retry_after_seconds: rateCheck.reason === "hourly_limit_exceeded" ? 3600 : undefined }),
         { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -443,14 +443,25 @@ serve(async (req) => {
       );
     }
 
-    // Log API usage — cost computed from streaming (usage unavailable, mark as null)
+    // Log API usage — estimate input tokens for budget tracking (streaming has no usage metadata)
+    const estimatedInputTokens = Math.ceil(
+      messages.reduce((sum, m) => sum + (m.content?.length || 0), 0) / 4
+    );
     try {
       await supabase.rpc("log_api_usage", {
         _service_type: "legal_chat",
         _model_name: streamResult.model_used,
-        _tokens_used: null,
+        _tokens_used: estimatedInputTokens,
         _estimated_cost: null,
-        _metadata: { message_length: message.length, has_context: !!kbContext, has_practice: !!practiceContext, request_id: streamResult.request_id, cost_note: "streaming_no_usage_data" }
+        _metadata: {
+          message_length: message.length,
+          has_context: !!kbContext,
+          has_practice: !!practiceContext,
+          request_id: streamResult.request_id,
+          cost_note: "streaming_no_usage_data",
+          cost_unknown: true,
+          input_tokens_estimated: true,
+        },
       });
     } catch (logErr) {
       err(FN, "Failed to log API usage", logErr);
