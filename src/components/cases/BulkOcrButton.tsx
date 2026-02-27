@@ -68,19 +68,30 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
   };
 
   const processOneFile = async (file: typeof filesToProcess[0]): Promise<boolean> => {
-    // Get signed URL
-    let signedUrl: string | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await sleep(500 * attempt);
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('case-files')
-        .createSignedUrl(file.storage_path, 600);
-      if (!signedUrlError && signedUrlData?.signedUrl) {
-        signedUrl = signedUrlData.signedUrl;
-        break;
-      }
+    // First check if file actually exists in storage
+    const { data: listData, error: listError } = await supabase.storage
+      .from('case-files')
+      .list(file.storage_path.split('/').slice(0, -1).join('/'), {
+        search: file.storage_path.split('/').pop() || '',
+        limit: 1,
+      });
+
+    if (listError || !listData || listData.length === 0) {
+      throw Object.assign(
+        new Error(t('ocr:file_missing_storage', 'File not found in storage. Please re-upload: {{name}}', { name: file.original_filename })),
+        { isMissing: true }
+      );
     }
-    if (!signedUrl) throw new Error('Failed to get signed URL');
+
+    // Get signed URL
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('case-files')
+      .createSignedUrl(file.storage_path, 600);
+
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      throw new Error('Failed to get signed URL: ' + (signedUrlError?.message || 'unknown'));
+    }
+    const signedUrl = signedUrlData.signedUrl;
 
     const lang = i18n.language === 'hy' ? 'hye' : i18n.language === 'ru' ? 'rus' : 'eng';
 
@@ -154,10 +165,17 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
           succeeded = true;
           break;
         } catch (err) {
+          const isMissing = (err as { isMissing?: boolean }).isMissing;
+          if (isMissing) {
+            // File doesn't exist in storage — no point retrying
+            console.warn(`File missing in storage: ${file.original_filename}`);
+            toast.warning((err as Error).message);
+            break;
+          }
           const isRate = (err as { isRateLimit?: boolean }).isRateLimit;
           if (isRate && retry < MAX_RETRIES) {
             rateLimitHit = true;
-            const backoff = 30000 + retry * 15000; // 30s, 45s
+            const backoff = 30000 + retry * 15000;
             setStatusMessage(t('ocr:rate_limit_retry', 'Rate limit hit, retrying in {{seconds}}s...', { seconds: Math.round(backoff / 1000) }));
             await sleep(backoff);
             if (cancelledRef.current) break;
