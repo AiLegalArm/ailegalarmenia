@@ -40,6 +40,8 @@ const ALLOWED_MODEL_STRING_FILES = new Set([
   "model-config.test.ts",
   "gateway-bypass.ts",
   "governance-audit.test.ts",
+  "rate-limiter.ts",   // MODEL_PRICING table
+  "prompt-armor.ts",   // fallback model reference
 ]);
 
 Deno.test("No direct ai.gateway calls outside shared helpers", async () => {
@@ -90,8 +92,8 @@ Deno.test("No hardcoded model strings outside MODEL_MAP", async () => {
   }
 });
 
-Deno.test("MODEL_MAP covers all expected functions", () => {
-  // Dynamic import not needed — just verify the exported map
+Deno.test("MODEL_MAP covers all expected functions", async () => {
+  const { MODEL_MAP } = await import("./openai-router.ts");
   const expectedFunctions = [
     "ai-analyze",
     "multi-agent-analyze",
@@ -112,12 +114,45 @@ Deno.test("MODEL_MAP covers all expected functions", () => {
     "prompt-armor-repair",
     "generate-embeddings",
     "admin-ai-chat",
+    "practice-ai-enrich-worker",
   ];
 
-  // This test validates the list exists — actual MODEL_MAP validation
-  // is done at import time by enforceGovernance()
-  if (expectedFunctions.length < 15) {
-    throw new Error("Expected at least 15 functions in governance policy");
+  const missing = expectedFunctions.filter(f => !MODEL_MAP[f]);
+  if (missing.length > 0) {
+    throw new Error(
+      `MODEL_MAP is missing entries for: ${missing.join(", ")}`
+    );
+  }
+});
+
+Deno.test("getModelConfig returns valid config for admin-ai-chat and practice-ai-enrich-worker", async () => {
+  const { getModelConfig } = await import("./openai-router.ts");
+
+  const adminCfg = getModelConfig("admin-ai-chat");
+  if (!adminCfg || !adminCfg.model) {
+    throw new Error("getModelConfig('admin-ai-chat') returned invalid config");
+  }
+
+  const workerCfg = getModelConfig("practice-ai-enrich-worker");
+  if (!workerCfg || !workerCfg.model) {
+    throw new Error("getModelConfig('practice-ai-enrich-worker') returned invalid config");
+  }
+});
+
+Deno.test("getModelConfig throws on unknown function name", async () => {
+  const { getModelConfig } = await import("./openai-router.ts");
+
+  let threw = false;
+  try {
+    getModelConfig("nonexistent-function-xyz");
+  } catch (e) {
+    threw = true;
+    if (!(e instanceof Error) || !e.message.includes("No model config")) {
+      throw new Error(`Expected governance error, got: ${e}`);
+    }
+  }
+  if (!threw) {
+    throw new Error("getModelConfig should throw for unknown function names");
   }
 });
 

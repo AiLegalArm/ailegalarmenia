@@ -165,6 +165,14 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     max_tokens: 16000,
     description: "Admin AI chat (GPT-5, streaming)",
   },
+
+  // ── Aliases (worker functions that share config with their service) ────
+  "practice-ai-enrich-worker": {
+    model: "google/gemini-2.5-flash",
+    temperature: 0.2,
+    max_tokens: 16000,
+    description: "Enrich practice worker (alias of legal-practice-enrich)",
+  },
 };
 
 /**
@@ -231,6 +239,7 @@ const OPENAI_CHAT_ALLOWLIST = new Set([
   "ai-analyze:hallucination_audit",
   "ai-analyze:legal_position_comparator",
   "ai-analyze:draft_deterministic",
+  "admin-ai-chat",
 ]);
 
 /** OpenAI embedding models allowed ONLY for these functionNames */
@@ -285,8 +294,14 @@ export function getModelConfig(functionName: string, role?: string): ModelConfig
 
   const cfg = MODEL_MAP[functionName];
   if (!cfg) {
+    // Audit-log the missing key for observability
+    console.error(
+      `[openai-router] GOVERNANCE VIOLATION: No MODEL_MAP entry for "${functionName}". ` +
+      `Available keys: ${Object.keys(MODEL_MAP).join(", ")}`
+    );
     throw new Error(
-      `[openai-router] No model config for function "${functionName}".`
+      `[openai-router] No model config for function "${functionName}". ` +
+      `Register it in MODEL_MAP before calling getModelConfig().`
     );
   }
   return enforceGovernance(cfg, roleLabel, functionName);
