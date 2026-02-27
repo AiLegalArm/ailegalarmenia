@@ -110,12 +110,6 @@ const KB_SELECT_FIELDS = [
   "content_hash", "embedding",
 ].join(", ");
 
-/** Minimal select for knowledge_base (fewer fields) */
-const KB_SELECT_FIELDS = [
-  "id", "title", "content_text", "category", "article_number",
-  "source_name", "version_date",
-].join(", ");
-
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors.errorResponse) return cors.errorResponse;
@@ -175,6 +169,7 @@ serve(async (req) => {
 
     let processedOk = 0;
     let processedFailed = 0;
+    let skippedIdempotent = 0;
     const errors: string[] = [];
     let fatalHit = false;
 
@@ -226,7 +221,7 @@ serve(async (req) => {
             embedding_last_attempt: new Date().toISOString(),
             embedding_error: null,
           }).eq("id", job.document_id);
-          processedOk++;
+          skippedIdempotent++;
           console.log(`[embed-worker] skip (idempotent): doc=${job.document_id} table=${src}`);
           continue;
         }
@@ -298,10 +293,11 @@ serve(async (req) => {
       .lt("attempts", 5);
 
     const duration = Date.now() - startTime;
-    console.log(`[embed-worker] done: picked=${jobs.length} ok=${processedOk} failed=${processedFailed} remaining=${remaining} duration=${duration}ms fatal=${fatalHit}`);
+    console.log(`[embed-worker] done: picked=${jobs.length} ok=${processedOk} skipped=${skippedIdempotent} failed=${processedFailed} remaining=${remaining} duration=${duration}ms fatal=${fatalHit}`);
 
     return new Response(JSON.stringify({
-      picked: jobs.length, processed_ok: processedOk, processed_failed: processedFailed,
+      picked: jobs.length, processed_ok: processedOk, skipped_idempotent: skippedIdempotent,
+      processed_failed: processedFailed,
       pending_remaining: remaining || 0, duration_ms: duration,
       fatal: fatalHit || undefined,
       errors: errors.length > 0 ? errors : undefined,
