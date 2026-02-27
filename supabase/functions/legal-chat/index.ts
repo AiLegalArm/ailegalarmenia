@@ -443,42 +443,68 @@ serve(async (req) => {
       );
     }
 
-    // Log API usage — bounded estimate for budget tracking (streaming has no usage metadata)
+    // Bounded streaming cost accounting: count actual streamed chars
     const estimatedInputTokens = Math.ceil(
       messages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0) / 4
     );
-    // Bounded output estimate: cap at model max_tokens to prevent unbounded drift
     const OUTPUT_TOKEN_CAP = chatModelCfg.max_tokens; // from MODEL_MAP
-    const estimatedOutputTokens = OUTPUT_TOKEN_CAP; // worst-case bound
-    const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens;
-    try {
-      await supabase.rpc("log_api_usage", {
-        _service_type: "legal_chat",
-        _model_name: streamResult.model_used,
-        _tokens_used: estimatedTotalTokens,
-        _estimated_cost: null,
-        _metadata: {
-          message_length: message.length,
-          has_context: !!kbContext,
-          has_practice: !!practiceContext,
-          request_id: streamResult.request_id,
-          cost_estimated: true,
-          input_tokens_estimated: true,
-          streaming_estimation: {
-            method: "chars/4",
-            bounded: true,
-            input_tokens_est: estimatedInputTokens,
-            output_tokens_est: estimatedOutputTokens,
-            output_cap: OUTPUT_TOKEN_CAP,
-          },
-        },
-      });
-    } catch (logErr) {
-      err(FN, "Failed to log API usage", logErr);
-    }
+    let streamedCharsTotal = 0;
+    const decoder = new TextDecoder();
 
-    // Return streaming response
-    return new Response(response.body, {
+    const { readable, writable } = new TransformStream({
+      transform(chunk, controller) {
+        // Pass chunk through unchanged
+        controller.enqueue(chunk);
+        // Count text content from SSE data lines
+        try {
+          const text = decoder.decode(chunk, { stream: true });
+          for (const line of text.split("\n")) {
+            if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              const delta = parsed?.choices?.[0]?.delta?.content;
+              if (typeof delta === "string") {
+                streamedCharsTotal += delta.length;
+              }
+            } catch { /* non-JSON SSE line, skip */ }
+          }
+        } catch { /* decode error, skip counting */ }
+      },
+      flush() {
+        // Log usage after stream completes with actual output estimate
+        const outputTokensEstRaw = Math.ceil(streamedCharsTotal / 4);
+        const outputTokensEst = Math.min(outputTokensEstRaw, OUTPUT_TOKEN_CAP);
+        const totalTokensEst = estimatedInputTokens + outputTokensEst;
+        supabase.rpc("log_api_usage", {
+          _service_type: "legal_chat",
+          _model_name: streamResult.model_used,
+          _tokens_used: totalTokensEst,
+          _estimated_cost: null,
+          _metadata: {
+            message_length: message.length,
+            has_context: !!kbContext,
+            has_practice: !!practiceContext,
+            request_id: streamResult.request_id,
+            cost_estimated: true,
+            streaming_estimation: {
+              method: "chars/4",
+              bounded: true,
+              input_tokens_est: estimatedInputTokens,
+              output_tokens_est_raw: outputTokensEstRaw,
+              output_tokens_est: outputTokensEst,
+              output_cap: OUTPUT_TOKEN_CAP,
+              streamed_chars_total: streamedCharsTotal,
+            },
+          },
+        }).catch((logErr: unknown) => err(FN, "Failed to log API usage", logErr));
+      },
+    });
+
+    // Pipe the AI response through our counting transform
+    response.body!.pipeTo(writable).catch(() => {});
+
+    // Return the transformed stream
+    return new Response(readable, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
 
