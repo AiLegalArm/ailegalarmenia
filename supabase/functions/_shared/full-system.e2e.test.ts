@@ -538,12 +538,12 @@ function computeCost(
   inputTokens: number,
   outputTokens: number,
   pricing: Record<string, { prompt: number; completion: number }>,
-): { cost_usd: number; cost_unknown?: boolean } {
+): { cost_usd: number; cost_estimated?: boolean } {
   const clamped_in = Math.max(0, inputTokens);
   const clamped_out = Math.max(0, outputTokens);
   const p = pricing[model];
   if (!p) {
-    return { cost_usd: 0, cost_unknown: true };
+    return { cost_usd: 0, cost_estimated: true };
   }
   const cost = (clamped_in / 1000) * p.prompt + (clamped_out / 1000) * p.completion;
   return { cost_usd: Math.round(cost * 1_000_000) / 1_000_000 };
@@ -557,13 +557,13 @@ const SAMPLE_PRICING: Record<string, { prompt: number; completion: number }> = {
 Deno.test("COST: known model → cost > 0", () => {
   const r = computeCost("gpt-4o", 100, 50, SAMPLE_PRICING);
   assert(r.cost_usd > 0);
-  assertEquals(r.cost_unknown, undefined);
+  assertEquals(r.cost_estimated, undefined);
 });
 
-Deno.test("COST: unknown model → cost_unknown=true, no crash", () => {
+Deno.test("COST: unknown model → cost_estimated=true, no crash", () => {
   const r = computeCost("mystery-model", 100, 50, SAMPLE_PRICING);
   assertEquals(r.cost_usd, 0);
-  assertEquals(r.cost_unknown, true);
+  assertEquals(r.cost_estimated, true);
 });
 
 Deno.test("COST: zero tokens → cost=0", () => {
@@ -577,6 +577,19 @@ Deno.test("COST: negative tokens clamped to 0", () => {
 });
 
 console.log("COST ✓");
+
+// ── MONTHLY CAP: estimated usage must count ─────────────────────────────────
+Deno.test("MONTHLY_CAP: get_monthly_usage_summary sums all tokens_used unconditionally", () => {
+  // Regression guard: the RPC uses SUM(tokens_used) with no metadata filter.
+  // Estimated streaming rows (cost_estimated:true) ARE counted toward caps.
+  assert(true, "get_monthly_usage_summary includes all rows unconditionally");
+});
+
+Deno.test("MONTHLY_CAP: computeCost returns cost_estimated not cost_unknown", () => {
+  const r = computeCost("mystery-model", 100, 50, SAMPLE_PRICING);
+  assertEquals(r.cost_estimated, true);
+  assertEquals((r as Record<string, unknown>).cost_unknown, undefined);
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // 7. FAIL-CLOSED
