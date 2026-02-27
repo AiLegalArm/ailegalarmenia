@@ -1,11 +1,11 @@
 /**
- * eval-runner — Evaluation Framework Runner (v2.3)
+ * eval-runner — Evaluation Framework Runner (v2.4)
  *
- * v2.3 changes:
- *   - Authorization: payload._headers.Authorization respected; fallback to service key
- *   - Deterministic test setup for P0 rate-limit/budget cases via setupEvalClient()
- *   - multi_call_status_sequence supports expected_statuses[] array
- *   - eval_cases C/D use EVAL_CLIENT_JWT env for auth
+ * v2.4 changes:
+ *   - apikey header uses SUPABASE_ANON_KEY (not service role)
+ *   - OPTIONS requests omit Authorization by default
+ *   - Authorization/apikey values stripped from stored response_headers
+ *   - callEdgeFunction accepts anonKey parameter
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -446,6 +446,7 @@ async function setupEvalClient(supabase: SupabaseClient): Promise<{ userId: stri
 async function callEdgeFunction(
   supabaseUrl: string,
   serviceKey: string,
+  anonKey: string,
   targetFunction: string,
   payload: Record<string, unknown>,
 ): Promise<CallResult> {
@@ -463,14 +464,20 @@ async function callEdgeFunction(
   const t0 = Date.now();
 
   try {
-    // v2.3: If payload._headers.Authorization is set, use it as-is.
-    // Otherwise fallback to Bearer <serviceKey>.
-    const authHeader = extraHeaders.Authorization || extraHeaders.authorization || `Bearer ${serviceKey}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Authorization": authHeader,
-      "apikey": serviceKey,
+      "apikey": anonKey,
     };
+
+    // Authorization: explicit > skip for OPTIONS > fallback to service key
+    const explicitAuth = extraHeaders.Authorization || extraHeaders.authorization;
+    if (explicitAuth) {
+      headers["Authorization"] = explicitAuth;
+    } else if (method !== "OPTIONS") {
+      headers["Authorization"] = `Bearer ${serviceKey}`;
+    }
+    // For OPTIONS without explicit auth: no Authorization header at all
+
     // Merge remaining extra headers (except Authorization which we handled)
     for (const [k, v] of Object.entries(extraHeaders)) {
       if (k.toLowerCase() !== "authorization") {
@@ -495,7 +502,8 @@ async function callEdgeFunction(
       responseBody = { _raw_text: text };
     }
 
-    return { status: response.status, headers: headersToRecord(response.headers), body: responseBody, latencyMs };
+    const respHeaders = headersToRecord(response.headers);
+    return { status: response.status, headers: respHeaders, body: responseBody, latencyMs };
   } finally {
     clearTimeout(timeout);
   }
@@ -538,6 +546,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("ANON_KEY") || "";
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: cases, error: casesErr } = await supabase
@@ -595,12 +604,12 @@ serve(async (req) => {
           const callCount = (inputPayload._call_count as number) || 3;
           callResults = [];
           for (let i = 0; i < callCount; i++) {
-            const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, evalCase.target_function, inputPayload);
+            const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, supabaseAnonKey, evalCase.target_function, inputPayload);
             callResults.push(result);
             log("eval-runner", `multi_call ${i + 1}/${callCount}`, { status: result.status, fn: evalCase.target_function });
           }
         } else {
-          const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, evalCase.target_function, inputPayload);
+          const result = await callEdgeFunction(supabaseUrl, supabaseServiceKey, supabaseAnonKey, evalCase.target_function, inputPayload);
           callResults = [result];
         }
 
@@ -667,6 +676,11 @@ serve(async (req) => {
 
         results.push({ case_name: evalCase.name, status: caseStatus, invariants, latency_ms: totalLatency, http_status: httpStatus, temporal_metadata_source: temporalMetadataSource });
 
+        // Sanitize headers: never persist auth secrets
+        const sanitizedHeaders = { ...responseHeaders };
+        delete sanitizedHeaders["authorization"];
+        delete sanitizedHeaders["apikey"];
+
         await supabase.from("eval_run_results").insert({
           run_id: run.id,
           case_id: evalCase.id,
@@ -677,7 +691,7 @@ serve(async (req) => {
           temporal_metadata_source: temporalMetadataSource || null,
           latency_ms: totalLatency,
           http_status: httpStatus,
-          response_headers: responseHeaders,
+          response_headers: sanitizedHeaders,
         });
       } catch (caseErr) {
         const latencyMs = Date.now() - t0;
