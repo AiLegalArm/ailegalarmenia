@@ -39,9 +39,9 @@ const SYSTEM_PROMPT = `Ты — продвинутый генератор сис
 ОТВЕЧАЙ ВСЕГДА НА РУССКОМ ЯЗЫКЕ.`;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
 
   try {
     const { messages } = await req.json();

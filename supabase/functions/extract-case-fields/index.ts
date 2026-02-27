@@ -50,9 +50,9 @@ CRITICAL RULES:
 
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
 
   try {
     // === AUTH GUARD ===

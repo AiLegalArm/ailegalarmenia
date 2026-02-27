@@ -2,9 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { handleCors } from "../_shared/edge-security.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
 
   const start = Date.now();
 
