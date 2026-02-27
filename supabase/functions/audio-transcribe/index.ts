@@ -7,9 +7,10 @@ const MAX_FILE_SIZE_MB = 25;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  // === CORS via centralized handler ===
+  const corsResult = handleCors(req);
+  if (corsResult.errorResponse) return corsResult.errorResponse;
+  const corsHeaders = corsResult.corsHeaders!;
 
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -25,6 +26,21 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // === RATE LIMITING (P0) ===
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const rateCheck = await checkRateLimits(supabase, authUser.id, "audio-transcribe");
+    if (!rateCheck.allowed) {
+      return new Response(JSON.stringify({ error: rateCheck.message }), {
+        status: rateCheck.status || 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // === END RATE LIMITING ===
 
     const { audioUrl, fileName, caseId, fileId } = await req.json();
 
@@ -42,11 +58,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
     console.log(`Processing audio transcription for: ${fileName}`);
 
@@ -106,19 +117,19 @@ Transcribe the audio file as a dialogue with speaker labels and timestamps.
 
 IMPORTANT RULES:
 - Add a timestamp [MM:SS] at the beginning of EACH speaker turn (e.g. [0:00], [0:15], [1:32])
-- Identify different speakers and label them as "\u0421\u043F\u0438\u043A\u0435\u0440 1:", "\u0421\u043F\u0438\u043A\u0435\u0440 2:", "\u0421\u043F\u0438\u043A\u0435\u0440 3:" etc.
+- Identify different speakers and label them as "Спикер 1:", "Спикер 2:", "Спикер 3:" etc.
 - Each new speaker turn starts on a new line
-- Format: [MM:SS] \u0421\u043F\u0438\u043A\u0435\u0440 N: text
-- If only one speaker, still use "\u0421\u043F\u0438\u043A\u0435\u0440 1:"
+- Format: [MM:SS] Спикер N: text
+- If only one speaker, still use "Спикер 1:"
 - Preserve all spoken words exactly as said
 - Include legal terminology correctly
 - If multiple languages are spoken, transcribe each in its original language
 - Output ONLY the dialogue transcription, nothing else
 
 Example format:
-[0:00] \u0421\u043F\u0438\u043A\u0435\u0440 1: \u0414\u043E\u0431\u0440\u044B\u0439 \u0434\u0435\u043D\u044C, \u0441\u0443\u0434 \u0437\u0430\u0441\u0435\u0434\u0430\u043D\u0438\u0435 \u043D\u0430\u0447\u0438\u043D\u0430\u0435\u0442\u0441\u044F.
-[0:08] \u0421\u043F\u0438\u043A\u0435\u0440 2: \u0412\u0430\u0448\u0430 \u0447\u0435\u0441\u0442\u044C, \u0437\u0430\u0449\u0438\u0442\u0430 \u0433\u043E\u0442\u043E\u0432\u0430.
-[0:12] \u0421\u043F\u0438\u043A\u0435\u0440 1: \u0425\u043E\u0440\u043E\u0448\u043E, \u043F\u0440\u0438\u0441\u0442\u0443\u043F\u0430\u0435\u043C.`,
+[0:00] Спикер 1: Добрый день, суд заседание начинается.
+[0:08] Спикер 2: Ваша честь, защита готова.
+[0:12] Спикер 1: Хорошо, приступаем.`,
             },
             {
               type: "image_url",
@@ -165,7 +176,7 @@ Example format:
 
     const confidence_reason = confidence_score >= 0.8
       ? "High confidence transcription"
-      : "Medium confidence \u2014 review recommended";
+      : "Medium confidence — review recommended";
 
     // Only save to DB if fileId is provided (case-linked transcription)
     let transcriptionRecord = null;

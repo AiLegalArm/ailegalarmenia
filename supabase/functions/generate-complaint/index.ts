@@ -49,6 +49,20 @@ serve(async (req) => {
     }
     // === END AUTH GUARD ===
 
+    // === RATE LIMITING (P0) ===
+    const supabaseServiceUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const serviceClient = createClient(supabaseServiceUrl, supabaseServiceRoleKey);
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const rateCheck = await checkRateLimits(serviceClient, user.id, "generate-complaint");
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: rateCheck.message }),
+        { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    // === END RATE LIMITING ===
+
     const body = await req.json();
     const request = validateRequest(body);
     const anonymize = body.anonymize === true;
