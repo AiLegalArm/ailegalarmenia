@@ -22,10 +22,16 @@ async function sha256Hex(text: string): Promise<string> {
 
 const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
-const LEGACY_EMBEDDING_DIMENSIONS = 768;
 const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 2; // reduced until token-overflow stabilised
+
+// Target table → column mapping (only 3072d targets allowed)
+const EMBEDDING_TARGETS: Record<string, { column: string; dim: number }> = {
+  knowledge_base: { column: "embedding", dim: 3072 },
+  legal_practice_kb: { column: "embedding", dim: 3072 },
+  legal_chunks: { column: "embedding", dim: 3072 },
+};
 
 // ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────
 class FatalOpenAIError extends Error {
@@ -193,10 +199,13 @@ serve(async (req) => {
       try {
         const src = job.source_table || "knowledge_base";
 
-        // Guard: chunk tables must never receive embeddings
-        if (src.endsWith("_chunks")) {
-          throw new Error(`Embedding into chunk table "${src}" is forbidden. Target parent table instead.`);
+        // Guard: only known parent tables allowed
+        const target = EMBEDDING_TARGETS[src];
+        if (!target) {
+          throw new Error(`Table "${src}" is not an allowed embedding target. Allowed: ${Object.keys(EMBEDDING_TARGETS).join(", ")}`);
         }
+
+        console.log(`[embed-worker] target: table=${src} column=${target.column} dim=${target.dim} doc=${job.document_id}`);
 
         const isKB = src === "knowledge_base";
         const selectFields = isKB ? KB_SELECT_FIELDS : DOC_SELECT_FIELDS;
@@ -231,13 +240,13 @@ serve(async (req) => {
           continue;
         }
 
-        let [embedding] = await getEmbeddings([embeddingText], EMBEDDING_DIMENSIONS);
-        let vectorStr = `[${embedding.join(",")}]`;
+        const [embedding] = await getEmbeddings([embeddingText], target.dim);
+        const vectorStr = `[${embedding.join(",")}]`;
 
-        let { error: updateErr } = await supabase
+        const { error: updateErr } = await supabase
           .from(src)
           .update({
-            embedding: vectorStr,
+            [target.column]: vectorStr,
             embedding_status: "success",
             embedding_attempts: attempt,
             embedding_last_attempt: new Date().toISOString(),
@@ -245,24 +254,6 @@ serve(async (req) => {
             content_hash: hash,
           })
           .eq("id", job.document_id);
-
-        if (updateErr && /different vector dimensions|vector dimensions/i.test(updateErr.message || "")) {
-          console.warn(`[embed-worker] dimension mismatch on table=${src}; retry with ${LEGACY_EMBEDDING_DIMENSIONS} dims`);
-          [embedding] = await getEmbeddings([embeddingText], LEGACY_EMBEDDING_DIMENSIONS);
-          vectorStr = `[${embedding.join(",")}]`;
-
-          ({ error: updateErr } = await supabase
-            .from(src)
-            .update({
-              embedding: vectorStr,
-              embedding_status: "success",
-              embedding_attempts: attempt,
-              embedding_last_attempt: new Date().toISOString(),
-              embedding_error: null,
-              content_hash: hash,
-            })
-            .eq("id", job.document_id));
-        }
 
         if (updateErr) throw new Error(`Update failed: ${updateErr.message}`);
 
@@ -272,7 +263,7 @@ serve(async (req) => {
         }).eq("id", job.id);
 
         processedOk++;
-        console.log(`[embed-worker] ok: doc=${job.document_id} table=${src} attempt=${attempt}`);
+        console.log(`[embed-worker] ok: doc=${job.document_id} table=${src} dim=${target.dim} attempt=${attempt}`);
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : "Unknown error";
         errors.push(`${job.document_id}: ${errMsg}`);
