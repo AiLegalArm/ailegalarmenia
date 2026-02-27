@@ -13,7 +13,7 @@ type AudioTranscription = Database['public']['Tables']['audio_transcriptions']['
 
 interface TranscriptionResult {
   fileRecord: CaseFile;
-  transcription: AudioTranscription;
+  transcription: Record<string, unknown>;
 }
 
 interface AudioUploadProps {

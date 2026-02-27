@@ -133,18 +133,46 @@ export function useAudioTranscriptions(caseId: string | undefined) {
         throw new Error('Failed to get signed URL');
       }
 
-      // Call edge function for transcription
-      const { data: transcriptionResult, error: fnError } = await supabase.functions
-        .invoke('audio-transcribe', {
-          body: {
-            audioUrl: signedUrlData.signedUrl,
-            fileName: file.name,
-            caseId,
-            fileId: fileRecord.id,
-          },
-        });
+      // Call edge function for transcription (with retry for transient failures)
+      let transcriptionResult: { confidence_score?: number; [key: string]: unknown } | null = null;
+      let lastError: Error | null = null;
 
-      if (fnError) throw fnError;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const { data, error: fnError } = await supabase.functions
+            .invoke('audio-transcribe', {
+              body: {
+                audioUrl: signedUrlData.signedUrl,
+                fileName: file.name,
+                caseId,
+                fileId: fileRecord.id,
+              },
+            });
+
+          if (fnError) {
+            // "Failed to send a request to the Edge Function" = network/timeout
+            const msg = fnError.message || String(fnError);
+            if (msg.includes('Failed to send') && attempt < 1) {
+              await new Promise(r => setTimeout(r, 3000));
+              continue;
+            }
+            throw new Error(msg);
+          }
+
+          transcriptionResult = data;
+          break;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          if (attempt < 1) {
+            await new Promise(r => setTimeout(r, 3000));
+            continue;
+          }
+        }
+      }
+
+      if (!transcriptionResult) {
+        throw lastError || new Error(t('audio:processing_failed'));
+      }
 
       return {
         fileRecord,
@@ -155,7 +183,7 @@ export function useAudioTranscriptions(caseId: string | undefined) {
       queryClient.invalidateQueries({ queryKey: ['audio-transcriptions', caseId] });
       queryClient.invalidateQueries({ queryKey: ['case-files', caseId] });
       
-      const confidence = data.transcription.confidence_score || 0;
+      const confidence = Number(data.transcription.confidence_score) || 0;
       const confidencePercent = Math.round(confidence * 100);
       
       toast({
