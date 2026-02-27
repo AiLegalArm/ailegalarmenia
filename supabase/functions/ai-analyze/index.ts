@@ -458,12 +458,32 @@ serve(async (req) => {
 
                 if (!downloadError && fileData) {
                   const buffer = await fileData.arrayBuffer();
-                  const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-                  fileContentsForVision.push({
-                    name: fileName,
-                    base64: base64,
-                    mimeType: fileType.includes("png") ? "image/png" : "image/jpeg",
-                  });
+                  const bytes = new Uint8Array(buffer);
+
+                  // Vision limits: max 5MB per image, max 5 images total
+                  const MAX_VISION_SIZE = 5 * 1024 * 1024;
+                  const MAX_VISION_IMAGES = 5;
+
+                  if (bytes.length > MAX_VISION_SIZE) {
+                    console.warn(`[ai-analyze] Image ${fileName} too large (${(bytes.length / 1024 / 1024).toFixed(1)}MB), skipping`);
+                  } else if (fileContentsForVision.length >= MAX_VISION_IMAGES) {
+                    console.warn(`[ai-analyze] Vision image limit (${MAX_VISION_IMAGES}) reached, skipping ${fileName}`);
+                  } else {
+                    // Chunked base64 encoding to avoid OOM with spread operator
+                    let binary = '';
+                    const chunkSize = 8192;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+                      binary += String.fromCharCode(...chunk);
+                    }
+                    const base64 = btoa(binary);
+
+                    fileContentsForVision.push({
+                      name: fileName,
+                      base64: base64,
+                      mimeType: fileType.includes("png") ? "image/png" : "image/jpeg",
+                    });
+                  }
                 }
               }
               // For DOCX files, extract text
@@ -475,13 +495,15 @@ serve(async (req) => {
                 if (!downloadError && fileData) {
                   try {
                     const buffer = await fileData.arrayBuffer();
-                    const uint8 = new Uint8Array(buffer);
-
-                    // DOCX is a ZIP file, find document.xml
-                    const zip = await unzipDocx(uint8);
-                    if (zip) {
-                      const truncatedText = zip.length > 8000 ? zip.substring(0, 8000) + "..." : zip;
+                    // Use shared DOCX parser instead of inline regex
+                    const { parseDocx } = await import("../_shared/docx-parser.ts");
+                    const docxResult = await parseDocx(buffer);
+                    if (docxResult.text) {
+                      const truncatedText = docxResult.text.length > 8000 ? docxResult.text.substring(0, 8000) + "..." : docxResult.text;
                       caseFilesContext += `\n### DOCX \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${truncatedText}\n\n`;
+                    }
+                    if (docxResult.warnings.length > 0) {
+                      console.warn(`[ai-analyze] DOCX warnings for ${fileName}:`, docxResult.warnings);
                     }
                   } catch (parseErr) {
                     console.error(`Failed to parse DOCX ${fileName}:`, parseErr);
@@ -512,51 +534,7 @@ serve(async (req) => {
       }
     }
 
-    // Helper function to extract text from DOCX
-    async function unzipDocx(data: Uint8Array): Promise<string | null> {
-      try {
-        // Simple DOCX text extraction - find document.xml in the ZIP
-        const textDecoder = new TextDecoder("utf-8");
-        const dataStr = textDecoder.decode(data);
-
-        // Look for the document.xml content between ZIP headers
-        // DOCX stores main content in word/document.xml
-        const pkSignature = String.fromCharCode(0x50, 0x4b, 0x03, 0x04);
-
-        if (!dataStr.startsWith(pkSignature)) {
-          return null;
-        }
-
-        // Find XML content patterns and extract text between tags
-        const xmlTagPattern = /<w:t[^>]*>([^<]*)<\/w:t>/g;
-        const matches: string[] = [];
-        let match;
-
-        // Convert to text and search for w:t tags (Word text elements)
-        const fullText = textDecoder.decode(data);
-        while ((match = xmlTagPattern.exec(fullText)) !== null) {
-          if (match[1]) {
-            matches.push(match[1]);
-          }
-        }
-
-        if (matches.length > 0) {
-          return matches.join(" ");
-        }
-
-        // Fallback: extract any readable text
-        const readableText = fullText
-          .replace(/<[^>]+>/g, " ")
-          .replace(/[^\u0000-\u007F\u0400-\u04FF\u0530-\u058F\u0020-\u007E]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
-        return readableText.length > 100 ? readableText.substring(0, 15000) : null;
-      } catch (err) {
-        console.error("DOCX parse error:", err);
-        return null;
-      }
-    }
+    // unzipDocx removed — using _shared/docx-parser.ts instead
 
     // ====== TOKEN BUDGET LIMITER ======
     const budgeted = applyBudgets({
