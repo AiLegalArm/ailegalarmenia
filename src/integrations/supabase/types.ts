@@ -1347,6 +1347,7 @@ export type Database = {
           embedding_attempts: number
           embedding_error: string | null
           embedding_last_attempt: string | null
+          embedding_legacy_768: string | null
           embedding_status: string
           id: string
           is_active: boolean
@@ -1372,6 +1373,7 @@ export type Database = {
           embedding_attempts?: number
           embedding_error?: string | null
           embedding_last_attempt?: string | null
+          embedding_legacy_768?: string | null
           embedding_status?: string
           id?: string
           is_active?: boolean
@@ -1397,6 +1399,7 @@ export type Database = {
           embedding_attempts?: number
           embedding_error?: string | null
           embedding_last_attempt?: string | null
+          embedding_legacy_768?: string | null
           embedding_status?: string
           id?: string
           is_active?: boolean
@@ -1481,6 +1484,7 @@ export type Database = {
           doc_id: string
           doc_type: string
           embedding: string | null
+          embedding_legacy_768: string | null
           id: string
           is_active: boolean
           label: string | null
@@ -1499,6 +1503,7 @@ export type Database = {
           doc_id: string
           doc_type: string
           embedding?: string | null
+          embedding_legacy_768?: string | null
           id?: string
           is_active?: boolean
           label?: string | null
@@ -1517,6 +1522,7 @@ export type Database = {
           doc_id?: string
           doc_type?: string
           embedding?: string | null
+          embedding_legacy_768?: string | null
           id?: string
           is_active?: boolean
           label?: string | null
@@ -1632,6 +1638,7 @@ export type Database = {
           embedding_attempts: number
           embedding_error: string | null
           embedding_last_attempt: string | null
+          embedding_legacy_768: string | null
           embedding_status: string
           facts_hy: string | null
           id: string
@@ -1689,6 +1696,7 @@ export type Database = {
           embedding_attempts?: number
           embedding_error?: string | null
           embedding_last_attempt?: string | null
+          embedding_legacy_768?: string | null
           embedding_status?: string
           facts_hy?: string | null
           id?: string
@@ -1746,6 +1754,7 @@ export type Database = {
           embedding_attempts?: number
           embedding_error?: string | null
           embedding_last_attempt?: string | null
+          embedding_legacy_768?: string | null
           embedding_status?: string
           facts_hy?: string | null
           id?: string
@@ -2465,6 +2474,7 @@ export type Database = {
           embedding_attempts: number
           embedding_error: string | null
           embedding_last_attempt: string | null
+          embedding_legacy_768: string | null
           embedding_status: string
           facts_hy: string | null
           id: string
