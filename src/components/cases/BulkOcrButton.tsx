@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, ScanText, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import { Loader2, ScanText, CheckCircle, AlertCircle, Sparkles, StopCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -17,7 +17,16 @@ interface BulkOcrButtonProps {
     file_type: string | null;
   }>;
   existingOcrFileIds: Set<string>;
-  forceProcess?: boolean; // When true, process all files even if already OCR'd
+  forceProcess?: boolean;
+}
+
+/** Delay between sequential OCR calls to avoid rate limiting */
+const DELAY_BETWEEN_CALLS_MS = 3000;
+/** Max retries per file on transient errors */
+const MAX_RETRIES = 2;
+
+function sleep(ms: number) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess = false }: BulkOcrButtonProps) {
@@ -26,23 +35,20 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [results, setResults] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
   const queryClient = useQueryClient();
 
-  // Filter files that need OCR (PDF, images, DOCX - NOT legacy .doc) and don't have OCR yet (unless forceProcess)
   const filesToProcess = files.filter(f => {
-    // Skip OCR check if forceProcess is true (user selected files manually)
     if (!forceProcess && existingOcrFileIds.has(f.id)) return false;
     const type = f.file_type?.toLowerCase() || '';
     const name = f.original_filename.toLowerCase();
-    
-    // Exclude legacy .doc format (not supported)
     if (name.endsWith('.doc') && !name.endsWith('.docx')) return false;
-    
     return (
       type.includes('pdf') ||
       type.includes('image') ||
-      type.includes('wordprocessingml') || // .docx
-      type.includes('text/plain') || // .txt
+      type.includes('wordprocessingml') ||
+      type.includes('text/plain') ||
       name.endsWith('.pdf') ||
       name.endsWith('.jpg') ||
       name.endsWith('.jpeg') ||
@@ -51,12 +57,54 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
       name.endsWith('.txt')
     );
   });
-  
-  // Check for unsupported .doc files
+
   const unsupportedDocFiles = files.filter(f => {
     const name = f.original_filename.toLowerCase();
     return name.endsWith('.doc') && !name.endsWith('.docx');
   });
+
+  const handleCancel = () => {
+    cancelledRef.current = true;
+  };
+
+  const processOneFile = async (file: typeof filesToProcess[0]): Promise<boolean> => {
+    // Get signed URL
+    let signedUrl: string | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(500 * attempt);
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('case-files')
+        .createSignedUrl(file.storage_path, 600);
+      if (!signedUrlError && signedUrlData?.signedUrl) {
+        signedUrl = signedUrlData.signedUrl;
+        break;
+      }
+    }
+    if (!signedUrl) throw new Error('Failed to get signed URL');
+
+    const lang = i18n.language === 'hy' ? 'hye' : i18n.language === 'ru' ? 'rus' : 'eng';
+
+    const { data, error } = await supabase.functions.invoke('ocr-process', {
+      body: { fileUrl: signedUrl, fileName: file.original_filename, language: lang, fileId: file.id }
+    });
+
+    if (error) {
+      const msg = getFunctionsInvokeErrorMessage(error);
+      // Check for rate limit
+      if (msg?.includes('Rate limit') || msg?.includes('429')) {
+        throw Object.assign(new Error(msg), { isRateLimit: true });
+      }
+      throw new Error(msg);
+    }
+
+    if (data.success && data.extracted_text) return true;
+
+    const errMsg = data.error || data.warnings?.[0] || 'OCR failed';
+    if (errMsg.includes('Rate limit') || errMsg.includes('429')) {
+      throw Object.assign(new Error(errMsg), { isRateLimit: true });
+    }
+    throw new Error(errMsg);
+  };
 
   const handleProcessAll = async () => {
     if (filesToProcess.length === 0) {
@@ -67,69 +115,75 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
     setIsProcessing(true);
     setProgress(0);
     setResults({ success: 0, failed: 0 });
+    setStatusMessage(null);
+    cancelledRef.current = false;
 
     let successCount = 0;
     let failCount = 0;
+    let rateLimitHit = false;
 
     for (let i = 0; i < filesToProcess.length; i++) {
+      if (cancelledRef.current) {
+        setStatusMessage(t('common:cancelled', 'Cancelled'));
+        break;
+      }
+
       const file = filesToProcess[i];
       setCurrentFile(file.original_filename);
       setProgress(Math.round((i / filesToProcess.length) * 100));
+      setStatusMessage(`${i + 1}/${filesToProcess.length}`);
 
-      try {
-        // Get signed URL for the file
-        let signedUrl: string | null = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) {
-            await new Promise(r => setTimeout(r, 500 * attempt));
+      // Add delay between calls (skip for first file)
+      if (i > 0) {
+        const delay = rateLimitHit ? 30000 : DELAY_BETWEEN_CALLS_MS;
+        setStatusMessage(
+          rateLimitHit
+            ? t('ocr:waiting_rate_limit', 'Waiting for rate limit reset... ({{seconds}}s)', { seconds: Math.round(delay / 1000) })
+            : `${i + 1}/${filesToProcess.length}`
+        );
+        await sleep(delay);
+        rateLimitHit = false;
+      }
+
+      if (cancelledRef.current) break;
+
+      let succeeded = false;
+      for (let retry = 0; retry <= MAX_RETRIES; retry++) {
+        try {
+          await processOneFile(file);
+          succeeded = true;
+          break;
+        } catch (err) {
+          const isRate = (err as { isRateLimit?: boolean }).isRateLimit;
+          if (isRate && retry < MAX_RETRIES) {
+            rateLimitHit = true;
+            const backoff = 30000 + retry * 15000; // 30s, 45s
+            setStatusMessage(t('ocr:rate_limit_retry', 'Rate limit hit, retrying in {{seconds}}s...', { seconds: Math.round(backoff / 1000) }));
+            await sleep(backoff);
+            if (cancelledRef.current) break;
+            continue;
           }
-          const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-            .from('case-files')
-            .createSignedUrl(file.storage_path, 300);
-
-          if (!signedUrlError && signedUrlData?.signedUrl) {
-            signedUrl = signedUrlData.signedUrl;
-            break;
+          if (retry < MAX_RETRIES && !isRate) {
+            await sleep(2000 * (retry + 1));
+            continue;
           }
+          console.error(`OCR failed for ${file.original_filename}:`, err);
         }
+      }
 
-        if (!signedUrl) {
-          throw new Error('Failed to get signed URL');
-        }
-
-        // Determine language
-        const lang = i18n.language === 'hy' ? 'hye' : i18n.language === 'ru' ? 'rus' : 'eng';
-
-        // Call OCR function
-        const { data, error } = await supabase.functions.invoke('ocr-process', {
-          body: {
-            fileUrl: signedUrl,
-            fileName: file.original_filename,
-            language: lang,
-            fileId: file.id, // Pass file ID to link OCR result
-          }
-        });
-
-        if (error) throw error;
-
-        // Check for success - ocr-process returns extracted_text and saves to DB automatically
-        if (data.success && data.extracted_text) {
-          successCount++;
-        } else {
-          throw new Error(data.error || 'OCR failed');
-        }
-      } catch (error) {
-        console.error(`OCR failed for ${file.original_filename}:`, error);
+      if (succeeded) {
+        successCount++;
+      } else {
         failCount++;
       }
+      setResults({ success: successCount, failed: failCount });
     }
 
     setProgress(100);
-    setResults({ success: successCount, failed: failCount });
     setCurrentFile(null);
     setIsProcessing(false);
+    setStatusMessage(null);
 
-    // Invalidate queries to refresh data
     queryClient.invalidateQueries({ queryKey: ['case-files', caseId] });
     queryClient.invalidateQueries({ queryKey: ['ocr-results', caseId] });
 
@@ -140,8 +194,6 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
           failed: failCount
         })
       );
-      
-      // Auto-extract facts and legal question after successful OCR
       await extractCaseFields();
     } else if (failCount > 0) {
       toast.error(t('ocr:processing_failed', 'Processing failed'));
@@ -151,42 +203,31 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
   const extractCaseFields = async () => {
     try {
       toast.info(t('cases:extracting_fields', 'Extracting facts and legal question...'));
-      
       const { data, error } = await supabase.functions.invoke('extract-case-fields', {
         body: { caseId }
       });
-
       if (error) {
         const msg = getFunctionsInvokeErrorMessage(error);
         throw new Error(msg);
       }
-
       if (data.success) {
-        // Invalidate case query to refresh the form
         queryClient.invalidateQueries({ queryKey: ['cases'] });
         queryClient.invalidateQueries({ queryKey: ['case', caseId] });
-        
         toast.success(t('cases:fields_extracted', 'Facts and legal question extracted successfully'));
       } else {
-        console.error('Extract fields failed:', data.error);
         const msg = typeof data.error === 'string' ? data.error : '';
-        const pretty = isNoDataForExtractionMessage(msg)
-          ? t('cases:extraction_no_data')
-          : msg;
+        const pretty = isNoDataForExtractionMessage(msg) ? t('cases:extraction_no_data') : msg;
         toast.warning(t('cases:extraction_partial', 'Could not extract all fields: {{error}}', { error: pretty || t('cases:extraction_failed') }));
       }
     } catch (error) {
       console.error('Extract case fields error:', error);
       const msg = error instanceof Error ? error.message : getFunctionsInvokeErrorMessage(error);
-      const pretty = isNoDataForExtractionMessage(msg)
-        ? t('cases:extraction_no_data')
-        : msg;
+      const pretty = isNoDataForExtractionMessage(msg) ? t('cases:extraction_no_data') : msg;
       toast.error(pretty || t('cases:extraction_failed', 'Failed to extract case fields'));
     }
   };
 
   const pendingCount = filesToProcess.length;
-
   if (files.length === 0) return null;
 
   return (
@@ -211,12 +252,18 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
             </>
           )}
         </Button>
-        {pendingCount > 0 && !isProcessing && (
+        {isProcessing && (
+          <Button variant="ghost" size="sm" onClick={handleCancel} className="text-destructive">
+            <StopCircle className="mr-1 h-4 w-4" />
+            {t('common:cancel', 'Cancel')}
+          </Button>
+        )}
+        {!isProcessing && pendingCount > 0 && (
           <span className="text-xs text-muted-foreground">
             {t('cases:files_pending_ocr', '{{count}} files pending', { count: pendingCount })}
           </span>
         )}
-        {pendingCount === 0 && files.length > 0 && unsupportedDocFiles.length === 0 && (
+        {!isProcessing && pendingCount === 0 && files.length > 0 && unsupportedDocFiles.length === 0 && (
           <span className="text-xs text-green-600 flex items-center gap-1">
             <CheckCircle className="h-3 w-3" />
             {t('cases:all_files_processed', 'All files processed')}
@@ -235,6 +282,7 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
           <Progress value={progress} className="h-2" />
           <p className="text-xs text-muted-foreground truncate">
             {currentFile && `${t('ocr:processing', 'Processing')}: ${currentFile}`}
+            {statusMessage && ` \u2014 ${statusMessage}`}
           </p>
         </div>
       )}
