@@ -10,7 +10,8 @@ import {
   CheckCircle2,
   BookOpen,
   Loader2,
-  MessageSquare
+  MessageSquare,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -105,7 +106,7 @@ function parseDialogue(text: string) {
 
 export function AudioTranscriptionResult({ transcription, caseId }: AudioTranscriptionResultProps) {
   const { t } = useTranslation(['audio', 'kb', 'common']);
-  const { updateTranscription, addToKnowledgeBase } = useAudioTranscriptions(caseId);
+  const { updateTranscription, addToKnowledgeBase, deleteTranscription } = useAudioTranscriptions(caseId);
   const { isAdmin, isClient } = useAuth();
   
   const [isEditing, setIsEditing] = useState(false);
@@ -309,15 +310,29 @@ export function AudioTranscriptionResult({ transcription, caseId }: AudioTranscr
             )}
 
             {canAddToKB && !isEditing && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setShowKBDialog(true)}
-                className="w-full sm:w-auto"
-              >
-                <BookOpen className="h-4 w-4 mr-1 shrink-0" />
-                <span className="truncate">{t('audio:add_to_kb')}</span>
-              </Button>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowKBDialog(true)}
+                >
+                  <BookOpen className="h-4 w-4 mr-1 shrink-0" />
+                  <span className="truncate">{t('audio:add_to_kb')}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => deleteTranscription.mutate(transcription.id)}
+                  disabled={deleteTranscription.isPending}
+                >
+                  {deleteTranscription.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-1 shrink-0" />
+                  )}
+                  <span className="truncate">{t('common:delete', 'Удалить')}</span>
+                </Button>
+              </div>
             )}
           </CardFooter>
         )}
