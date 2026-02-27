@@ -120,7 +120,7 @@ export const FILE_ANALYSIS: ModelConfig = {
 export const FIELD_EXTRACTION: ModelConfig = {
   model: "google/gemini-2.5-pro",
   temperature: 0.2,
-  max_tokens: 4000,
+  max_tokens: 16000,
   description: "Case field extraction — JSON output (temp=0.2, Gemini 2.5 Pro)",
 };
 
