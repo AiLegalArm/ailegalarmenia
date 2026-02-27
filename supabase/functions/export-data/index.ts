@@ -7,15 +7,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-/** Tables to export with their export config */
 const EXPORT_TABLES: {
   name: string;
   label: string;
   excludeCols?: string[];
-  where?: string;
 }[] = [
   { name: "knowledge_base", label: "Knowledge Base", excludeCols: ["embedding", "embedding_legacy_768", "tsv"] },
-  { name: "legal_practice_kb", label: "Legal Practice KB", excludeCols: ["embedding", "embedding_legacy_768"] },
+  { name: "legal_practice_kb", label: "Legal Practice KB", excludeCols: ["embedding", "embedding_legacy_768", "tsv"] },
   { name: "legal_documents", label: "Legal Documents" },
   { name: "legal_chunks", label: "Legal Chunks", excludeCols: ["embedding", "embedding_legacy_768"] },
   { name: "knowledge_base_chunks", label: "KB Chunks" },
@@ -25,6 +23,8 @@ const EXPORT_TABLES: {
   { name: "armenian_dictionary", label: "Armenian Dictionary" },
   { name: "app_settings", label: "App Settings" },
 ];
+
+const PAGE_SIZE = 500;
 
 function escapeSQL(val: unknown): string {
   if (val === null || val === undefined) return "NULL";
@@ -40,7 +40,6 @@ serve(async (req) => {
   }
 
   try {
-    // Auth check — admin only
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -53,7 +52,6 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user is admin
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -65,7 +63,6 @@ serve(async (req) => {
       });
     }
 
-    // Check admin role
     const adminClient = createClient(supabaseUrl, serviceKey);
     const { data: roles } = await adminClient
       .from("user_roles")
@@ -80,94 +77,94 @@ serve(async (req) => {
       });
     }
 
-    // Parse request body for optional table selection
     let selectedTables: string[] | null = null;
-    let format: "sql" | "json" = "sql";
     try {
       const body = await req.json();
       if (body.tables && Array.isArray(body.tables)) {
         selectedTables = body.tables;
       }
-      if (body.format === "json") format = "json";
     } catch { /* no body = export all */ }
 
     const tablesToExport = selectedTables
       ? EXPORT_TABLES.filter((t) => selectedTables!.includes(t.name))
       : EXPORT_TABLES;
 
-    const results: Record<string, { count: number; sql?: string; data?: unknown[] }> = {};
-    const sqlParts: string[] = [
-      "-- =============================================",
-      "-- AI Legal Armenia — Full Data Export",
-      `-- Generated: ${new Date().toISOString()}`,
-      "-- Run in Cloud View > Run SQL (select Live environment)",
-      "-- =============================================",
-      "",
-    ];
+    // Stream response to avoid memory buildup
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const header = [
+            "-- =============================================",
+            "-- AI Legal Armenia — Paginated Data Export",
+            `-- Generated: ${new Date().toISOString()}`,
+            "-- =============================================",
+            "",
+          ].join("\n");
+          controller.enqueue(encoder.encode(header));
 
-    for (const table of tablesToExport) {
-      const { data, error } = await adminClient.from(table.name).select("*");
+          for (const table of tablesToExport) {
+            const exclude = new Set(table.excludeCols || []);
+            let offset = 0;
+            let totalRows = 0;
 
-      if (error) {
-        console.error(`Error exporting ${table.name}:`, error.message);
-        results[table.name] = { count: 0 };
-        continue;
-      }
+            controller.enqueue(
+              encoder.encode(`\n-- ─── ${table.label} (${table.name}) ───\n`)
+            );
 
-      if (!data || data.length === 0) {
-        results[table.name] = { count: 0 };
-        continue;
-      }
+            while (true) {
+              const { data, error } = await adminClient
+                .from(table.name)
+                .select("*")
+                .range(offset, offset + PAGE_SIZE - 1);
 
-      const exclude = new Set(table.excludeCols || []);
+              if (error) {
+                controller.enqueue(
+                  encoder.encode(`-- ERROR exporting ${table.name}: ${error.message}\n`)
+                );
+                break;
+              }
 
-      if (format === "json") {
-        results[table.name] = { count: data.length, data };
-        continue;
-      }
+              if (!data || data.length === 0) break;
 
-      // Generate SQL
-      sqlParts.push(`-- ─── ${table.label} (${table.name}) — ${data.length} records ───`);
-      sqlParts.push("");
+              const lines: string[] = [];
+              for (const row of data) {
+                const columns = Object.keys(row).filter((k) => !exclude.has(k));
+                const values = columns.map((col) => escapeSQL(row[col]));
+                lines.push(
+                  `INSERT INTO public.${table.name} (${columns.join(", ")}) VALUES (${values.join(", ")}) ON CONFLICT DO NOTHING;`
+                );
+              }
+              controller.enqueue(encoder.encode(lines.join("\n") + "\n"));
 
-      for (const row of data) {
-        const columns = Object.keys(row).filter(
-          (k) => !exclude.has(k)
-        );
-        const values = columns.map((col) => escapeSQL(row[col]));
+              totalRows += data.length;
+              if (data.length < PAGE_SIZE) break;
+              offset += PAGE_SIZE;
+            }
 
-        sqlParts.push(
-          `INSERT INTO public.${table.name} (${columns.join(", ")}) VALUES (${values.join(", ")}) ON CONFLICT DO NOTHING;`
-        );
-      }
+            controller.enqueue(
+              encoder.encode(`-- ${table.name}: ${totalRows} records exported\n`)
+            );
+          }
 
-      sqlParts.push("");
-      results[table.name] = { count: data.length };
-    }
-
-    const totalRecords = Object.values(results).reduce((s, r) => s + r.count, 0);
-
-    if (format === "json") {
-      return new Response(
-        JSON.stringify({ total: totalRecords, tables: results }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          controller.enqueue(encoder.encode("\n-- Export complete\n"));
+          controller.close();
+        } catch (err) {
+          controller.enqueue(
+            encoder.encode(`-- FATAL: ${err instanceof Error ? err.message : "Unknown"}\n`)
+          );
+          controller.close();
         }
-      );
-    }
+      },
+    });
 
-    return new Response(
-      JSON.stringify({
-        total: totalRecords,
-        tables: Object.fromEntries(
-          Object.entries(results).map(([k, v]) => [k, v.count])
-        ),
-        sql: sqlParts.join("\n"),
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Disposition": `attachment; filename="export-${new Date().toISOString().slice(0,10)}.sql"`,
+      },
+    });
   } catch (err) {
     console.error("Export error:", err);
     return new Response(
