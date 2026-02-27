@@ -80,7 +80,7 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
   "extract-case-fields": {
     model: "google/gemini-2.5-pro",
     temperature: 0.2,
-    max_tokens: 4000,
+    max_tokens: 16000,
     json_mode: true,
     description: "Extract fields JSON (Gemini Pro)",
   },
