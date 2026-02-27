@@ -7,7 +7,7 @@ const EMBEDDING_MODEL = "text-embedding-3-large";
 const EMBEDDING_DIMENSIONS = 3072;
 const MAX_ATTEMPTS_BEFORE_DEAD_LETTER = 5;
 const MAX_CHARS_PER_TEXT = 12_000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 // ─── CORS ──────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -19,7 +19,15 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ─── Retry helper ──────────────────────────────────────────────────────────
+// ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────
+class FatalOpenAIError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "FatalOpenAIError";
+  }
+}
+
+// ─── Retry helper (only retries 429/5xx) ───────────────────────────────────
 async function withRetry<T>(
   fn: () => Promise<T>,
   retries = MAX_RETRIES,
@@ -30,9 +38,13 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (err) {
+      // Never retry fatal auth errors
+      if (err instanceof FatalOpenAIError) throw err;
       lastError = err;
       if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, delayMs * Math.pow(2, attempt)));
+        const wait = delayMs * Math.pow(2, attempt);
+        console.log(`[generate-embeddings] retry attempt=${attempt + 1}/${retries} wait=${wait}ms`);
+        await new Promise((r) => setTimeout(r, wait));
       }
     }
   }
@@ -42,7 +54,7 @@ async function withRetry<T>(
 // ─── OpenAI embedding call ─────────────────────────────────────────────────
 async function getEmbeddings(texts: string[]): Promise<number[][]> {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
+  if (!apiKey) throw new FatalOpenAIError(500, "OPENAI_API_KEY not configured");
 
   const truncated = texts.map((t) => t.substring(0, MAX_CHARS_PER_TEXT));
 
@@ -62,7 +74,12 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`OpenAI embeddings error ${res.status}: ${errText}`);
+      // 401/403 = fatal, do not retry
+      if (res.status === 401 || res.status === 403) {
+        throw new FatalOpenAIError(res.status, `OpenAI auth error ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      // 429/5xx = retryable
+      throw new Error(`OpenAI embeddings error ${res.status}: ${errText.substring(0, 200)}`);
     }
 
     return res;
@@ -84,6 +101,18 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // ── Fail-fast: no API key ────────────────────────────────────────────────
+  if (!Deno.env.get("OPENAI_API_KEY")) {
+    console.error("[generate-embeddings] OPENAI_API_KEY missing");
+    return new Response(
+      JSON.stringify({
+        error: "OPENAI_API_KEY not configured",
+        hint: "Add OPENAI_API_KEY secret in Lovable Cloud → Secrets",
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   // Auth: internal key OR Bearer JWT
@@ -210,10 +239,27 @@ serve(async (req) => {
     try {
       vectors = await getEmbeddings(texts);
       console.log(
-        `[generate-embeddings] Got ${vectors.length} vectors (dim=${vectors[0]?.length}) for table=${table}`,
+        `[generate-embeddings] batch ok: vectors=${vectors.length} dim=${vectors[0]?.length} table=${table}`,
       );
     } catch (batchErr) {
-      console.error("[generate-embeddings] Batch embedding failed, falling back to individual:", batchErr);
+      // Fatal auth errors → stop entire batch, no individual fallback
+      if (batchErr instanceof FatalOpenAIError) {
+        console.error(`[generate-embeddings] fatal: status=${batchErr.status} table=${table}`);
+        // Mark all docs as failed
+        for (const doc of docs) {
+          await supabase.from(table).update({
+            embedding_status: "failed",
+            embedding_attempts: (doc.embedding_attempts || 0) + 1,
+            embedding_last_attempt: now,
+            embedding_error: batchErr.message.substring(0, 500),
+          }).eq("id", doc.id);
+        }
+        return new Response(
+          JSON.stringify({ error: batchErr.message, fatal: true }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      console.error(`[generate-embeddings] batch failed, falling back to individual: table=${table}`);
     }
 
     for (let i = 0; i < docs.length; i++) {
@@ -247,13 +293,28 @@ serve(async (req) => {
 
         if (updateError) {
           errors.push(`${doc.id}: ${updateError.message}`);
+          console.error(`[generate-embeddings] update failed: id=${doc.id} table=${table} err=${updateError.message}`);
         } else {
           processed++;
+          console.log(`[generate-embeddings] ok: id=${doc.id} table=${table} attempt=${attempts}`);
         }
       } catch (docError) {
+        // Fatal = stop processing remaining docs
+        if (docError instanceof FatalOpenAIError) {
+          console.error(`[generate-embeddings] fatal on individual: status=${docError.status} id=${doc.id} table=${table}`);
+          await supabase.from(table).update({
+            embedding_status: "failed",
+            embedding_attempts: attempts,
+            embedding_last_attempt: now,
+            embedding_error: docError.message.substring(0, 500),
+          }).eq("id", doc.id);
+          errors.push(`${doc.id}: FATAL ${docError.message}`);
+          break; // stop loop
+        }
+
         const errMsg = docError instanceof Error ? docError.message : "Unknown error";
         errors.push(`${doc.id}: ${errMsg}`);
-        console.error(`[generate-embeddings] doc ${doc.id} failed:`, errMsg);
+        console.error(`[generate-embeddings] failed: id=${doc.id} table=${table} attempt=${attempts}`);
 
         await supabase
           .from(table)
@@ -267,6 +328,7 @@ serve(async (req) => {
       }
     }
 
+    // ── Counts ──────────────────────────────────────────────────────────────
     const remainBase = isChunkTable && table === "legal_practice_kb_chunks"
       ? supabase.from(table).select("id", { count: "exact", head: true })
       : supabase.from(table).select("id", { count: "exact", head: true }).eq("is_active", true);
@@ -285,7 +347,7 @@ serve(async (req) => {
       .gte("embedding_attempts", MAX_ATTEMPTS_BEFORE_DEAD_LETTER);
 
     console.log(
-      `[generate-embeddings] processed=${processed}, remaining=${remaining}, deadLetter=${deadLetterCount}, model=${EMBEDDING_MODEL}`,
+      `[generate-embeddings] done: processed=${processed} remaining=${remaining} deadLetter=${deadLetterCount} table=${table}`,
     );
 
     return new Response(
@@ -300,9 +362,10 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
-    console.error("[generate-embeddings] error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[generate-embeddings] error:", message);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
