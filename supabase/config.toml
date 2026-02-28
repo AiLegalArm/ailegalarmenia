@@ -14,7 +14,7 @@ verify_jwt = false
 [functions.generate-document]
 
 [functions.ai-analyze]
-
+wall_clock_limit = 300
 [functions.multi-agent-analyze]
 
 [functions.ocr-process]
