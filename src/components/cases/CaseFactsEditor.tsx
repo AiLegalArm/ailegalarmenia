@@ -139,13 +139,13 @@ export function CaseFactsEditor({
   };
 
   return (
-    <Card className="mt-4">
-      <CardHeader>
-        <CardTitle className="w-full min-w-0 break-normal leading-tight">
+    <Card className="mt-4 card-premium overflow-hidden">
+      <CardHeader className="p-4 sm:p-6">
+        <CardTitle className="w-full min-w-0 break-words leading-tight text-mobile-lg sm:text-lg" style={{ overflowWrap: 'anywhere' }}>
           {caseTitle} — {caseNumber}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4">
         <div className="flex flex-wrap justify-center gap-2">
           {!isEditingFields ? (
             <>
