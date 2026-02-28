@@ -150,20 +150,18 @@ export function CaseForm({
   const [autoFillStage, setAutoFillStage] = useState('');
 
   const caseFormSchema = z.object({
-    case_number: z.string().min(1, 'Required'),
-    title: z.string().min(1, 'Required'),
+    case_number: z.string().optional().default(''),
+    title: z.string().optional().default(''),
     description: z.string().optional(),
     facts: z.string().optional(),
     legal_question: z.string().optional(),
-    case_type: z.enum(['criminal', 'civil', 'administrative', 'echr'], {
-      required_error: t('case_type_required'),
-    }),
-    party_role: z.string().min(1, t('party_role_required')),
+    case_type: z.enum(['criminal', 'civil', 'administrative', 'echr']).optional().default('criminal'),
+    party_role: z.string().optional().default(''),
     appeal_party_role: z.enum(['appellant', 'respondent']).optional(),
-    current_stage: z.string().min(1, t('stage_required')),
-    status: z.enum(['open', 'in_progress', 'pending', 'closed', 'archived']),
-    priority: z.enum(['low', 'medium', 'high', 'urgent']),
-    court_name: z.string().min(1, t('court_required')),
+    current_stage: z.string().optional().default('preliminary'),
+    status: z.enum(['open', 'in_progress', 'pending', 'closed', 'archived']).optional().default('open'),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).optional().default('medium'),
+    court_name: z.string().optional().default(''),
     court_date: z.string().optional(),
     notes: z.string().optional(),
   });
@@ -373,15 +371,15 @@ export function CaseForm({
 
   const handleSubmit = (values: CaseFormValues) => {
     onSubmit({
-      case_number: values.case_number,
-      title: values.title,
-      case_type: values.case_type,
-      party_role: values.party_role,
+      case_number: values.case_number || `DRAFT-${Date.now()}`,
+      title: values.title || t('untitled_case', 'Untitled'),
+      case_type: values.case_type || 'criminal',
+      party_role: values.party_role || null,
       appeal_party_role: values.appeal_party_role || null,
-      current_stage: values.current_stage,
+      current_stage: values.current_stage || 'preliminary',
       court: values.court_name || null,
-      status: values.status,
-      priority: values.priority,
+      status: values.status || 'open',
+      priority: values.priority || 'medium',
       court_date: values.court_date ? new Date(values.court_date).toISOString() : null,
       description: values.description || null,
       court_name: values.court_name || null,
