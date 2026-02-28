@@ -40,6 +40,8 @@
   "case_created": "Дело создано успешно",
   "case_updated": "Дело обновлено",
   "case_deleted": "Дело удалено",
+  "case_number_duplicate": "Номер дела уже существует",
+  "case_number_duplicate_desc": "Дело с таким номером уже существует. Укажите другой номер.",
   "confirm_delete": "Вы уверены, что хотите удалить это дело?",
   "confirm_delete_file": "Вы уверены, что хотите удалить этот файл?",
   "status_open": "Открыто",
