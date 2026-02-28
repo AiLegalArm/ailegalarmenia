@@ -125,26 +125,41 @@ serve(async (req) => {
       context += `\n\n=== CASE NOTES ===\n${caseData.notes}`;
     }
 
+    // === Map-Reduce for large OCR/transcription content ===
+    const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
+
     if (ocrResults && ocrResults.length > 0) {
       context += "\n\n=== OCR EXTRACTED TEXT ===";
-      ocrResults.forEach((ocr, idx) => {
-        const text = (ocr.extracted_text || "").substring(0, 8000);
-        // Skip garbled OCR: if >20% of chars are '?' or replacement chars, it's corrupted
+      for (let idx = 0; idx < ocrResults.length; idx++) {
+        const ocr = ocrResults[idx];
+        const text = (ocr.extracted_text || "");
+        // Skip garbled OCR: if >15% of chars are '?' or replacement chars, it's corrupted
         const questionMarks = (text.match(/\?/g) || []).length;
         const ratio = text.length > 0 ? questionMarks / text.length : 1;
         if (ratio > 0.15) {
           console.warn(`Skipping garbled OCR document ${idx + 1}: ${Math.round(ratio * 100)}% question marks`);
-          return;
+          continue;
         }
-        context += `\n\n[Document ${idx + 1}]:\n${text}`;
-      });
+        // Use Map-Reduce for large OCR texts instead of hard truncation
+        const mrResult = await mapReduceSummarize(text);
+        if (mrResult.wasReduced) {
+          console.log(`[extract-case-fields] OCR doc ${idx + 1}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars (${mrResult.chunksProcessed} chunks, ${mrResult.latencyMs}ms)`);
+        }
+        context += `\n\n[Document ${idx + 1}]:\n${mrResult.summary}`;
+      }
     }
 
     if (transcriptions && transcriptions.length > 0) {
       context += "\n\n=== AUDIO TRANSCRIPTIONS ===";
-      transcriptions.forEach((trans, idx) => {
-        context += `\n\n[Transcription ${idx + 1}]:\n${(trans.transcription_text || "").substring(0, 8000)}`;
-      });
+      for (let idx = 0; idx < transcriptions.length; idx++) {
+        const trans = transcriptions[idx];
+        const text = (trans.transcription_text || "");
+        const mrResult = await mapReduceSummarize(text);
+        if (mrResult.wasReduced) {
+          console.log(`[extract-case-fields] Transcription ${idx + 1}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+        }
+        context += `\n\n[Transcription ${idx + 1}]:\n${mrResult.summary}`;
+      }
     }
 
     // Build multimodal message content
@@ -187,13 +202,16 @@ serve(async (req) => {
             }
 
             const txtContent = await fileData.text();
-            const trimmed = txtContent.substring(0, 15000);
-            console.log(`TXT read: ${trimmed.length} chars from ${file.original_filename}`);
+            // Use Map-Reduce for large TXT files
+            const mrResult = await mapReduceSummarize(txtContent);
+            if (mrResult.wasReduced) {
+              console.log(`[extract-case-fields] TXT ${file.original_filename}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+            }
 
-            context += `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${trimmed}`;
+            context += `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${mrResult.summary}`;
             userMessageContent.push({
               type: "text",
-              text: `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${trimmed}`
+              text: `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${mrResult.summary}`
             });
             continue;
           }
@@ -217,13 +235,16 @@ serve(async (req) => {
             try {
               const { parseDocx } = await import("../_shared/docx-parser.ts");
               const docxText = await parseDocx(bytes);
-              const trimmed = docxText.substring(0, 12000);
-              console.log(`DOCX parsed: ${trimmed.length} chars from ${file.original_filename}`);
+              // Use Map-Reduce for large DOCX files
+              const mrResult = await mapReduceSummarize(docxText);
+              if (mrResult.wasReduced) {
+                console.log(`[extract-case-fields] DOCX ${file.original_filename}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+              }
 
-              context += `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${trimmed}`;
+              context += `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${mrResult.summary}`;
               userMessageContent.push({
                 type: "text",
-                text: `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${trimmed}`
+                text: `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${mrResult.summary}`
               });
             } catch (parseErr) {
               console.warn(`DOCX parse error for ${file.original_filename}:`, parseErr);

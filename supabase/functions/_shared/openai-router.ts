@@ -172,6 +172,14 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     max_tokens: 16000,
     description: "Enrich practice worker (alias of legal-practice-enrich)",
   },
+
+  // ── Map-Reduce summarizer (cheap, fast) ────────────────────────────────
+  "map-reduce-summarize": {
+    model: "google/gemini-2.5-flash",
+    temperature: 0.1,
+    max_tokens: 4000,
+    description: "Map-Reduce chunk summarizer (Gemini Flash, cheap)",
+  },
 };
 
 /**
