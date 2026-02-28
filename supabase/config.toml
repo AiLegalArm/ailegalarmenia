@@ -25,6 +25,9 @@ verify_jwt = false
 
 [functions.extract-case-fields]
 
+[functions.extract-case-form-fields]
+verify_jwt = false
+
 [functions.analyze-files-for-complaint]
 
 [functions.legal-practice-import]
