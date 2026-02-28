@@ -140,6 +140,8 @@
   "facts_hy": "\u0553\u0561\u057D\u057F\u0565\u0580",
   "legal_question": "Legal Question",
   "legal_question_hy": "\u053b\u0580\u0561\u057E\u0561\u056f\u0561\u0576 \u0570\u0561\u0580\u0581",
+  "facts_placeholder": "Case facts will be auto-filled from uploaded documents...",
+  "legal_question_placeholder": "Legal question will be auto-filled from uploaded documents...",
   "facts_and_question": "Facts & Legal Question",
   "auto_extract": "Auto-extract",
   "fields_extracted": "Facts and legal question extracted successfully",

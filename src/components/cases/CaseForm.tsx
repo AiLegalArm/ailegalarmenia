@@ -145,8 +145,7 @@ export function CaseForm({
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
-  const [extractedFacts, setExtractedFacts] = useState<string | null>(null);
-  const [extractedLegalQuestion, setExtractedLegalQuestion] = useState<string | null>(null);
+  // extractedFacts/LegalQuestion no longer needed — fields are in the form schema
   const [autoFillProgress, setAutoFillProgress] = useState(0);
   const [autoFillStage, setAutoFillStage] = useState('');
 
@@ -154,6 +153,8 @@ export function CaseForm({
     case_number: z.string().min(1, 'Required'),
     title: z.string().min(1, 'Required'),
     description: z.string().optional(),
+    facts: z.string().optional(),
+    legal_question: z.string().optional(),
     case_type: z.enum(['criminal', 'civil', 'administrative', 'echr'], {
       required_error: t('case_type_required'),
     }),
@@ -175,6 +176,8 @@ export function CaseForm({
       case_number: '',
       title: '',
       description: '',
+      facts: '',
+      legal_question: '',
       case_type: 'criminal',
       party_role: undefined,
       appeal_party_role: undefined,
@@ -208,6 +211,8 @@ export function CaseForm({
         case_number: initialData.case_number,
         title: initialData.title,
         description: initialData.description || '',
+        facts: initialData.facts || '',
+        legal_question: initialData.legal_question || '',
         case_type: caseType,
         party_role: (initialData.party_role as 'claimant' | 'defendant') || undefined,
         appeal_party_role: (initialData.appeal_party_role as 'appellant' | 'respondent') || undefined,
@@ -227,6 +232,8 @@ export function CaseForm({
         case_number: '',
         title: '',
         description: '',
+        facts: '',
+        legal_question: '',
         case_type: 'criminal',
         party_role: undefined,
         appeal_party_role: undefined,
@@ -341,8 +348,8 @@ export function CaseForm({
       if (f.current_stage && ['pretrial', 'preliminary', 'first_instance', 'appeal', 'cassation', 'enforcement', 'echr'].includes(f.current_stage)) {
         form.setValue('current_stage', f.current_stage === 'pretrial' ? 'preliminary' : f.current_stage);
       }
-      if (f.facts) setExtractedFacts(f.facts);
-      if (f.legal_question) setExtractedLegalQuestion(f.legal_question);
+      if (f.facts) form.setValue('facts', f.facts);
+      if (f.legal_question) form.setValue('legal_question', f.legal_question);
 
       setAutoFillProgress(100);
       setAutoFillStage(t('auto_fill_complete'));
@@ -379,8 +386,8 @@ export function CaseForm({
       description: values.description || null,
       court_name: values.court_name || null,
       notes: values.notes || null,
-      facts: extractedFacts || null,
-      legal_question: extractedLegalQuestion || null,
+      facts: values.facts || null,
+      legal_question: values.legal_question || null,
     }, pendingFiles.length > 0 ? pendingFiles : undefined);
     
     setPendingFiles([]);
@@ -569,6 +576,33 @@ export function CaseForm({
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="facts"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('facts')}</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} rows={5} placeholder={t('facts_placeholder')} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="legal_question"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('legal_question')}</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} rows={3} placeholder={t('legal_question_placeholder')} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
