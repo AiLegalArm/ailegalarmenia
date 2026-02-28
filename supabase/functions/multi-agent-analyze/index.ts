@@ -747,14 +747,19 @@ serve(async (req) => {
     }
 
     // Add volume content
+    // === Map-Reduce for large volume OCR content ===
+    const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
+
     if (volumes && volumes.length > 0) {
       contextParts.push("\n\u054f\u0548\u0544\u0535\u0550:");
       for (const vol of volumes) {
         contextParts.push(`\n--- \u054f\u0548\u0544 ${vol.volume_number}: ${vol.title} ---`);
         if (vol.ocr_text) {
-          // Limit OCR text to prevent token overflow
-          const ocrText = vol.ocr_text.substring(0, 15000);
-          contextParts.push(ocrText);
+          const mrResult = await mapReduceSummarize(vol.ocr_text);
+          if (mrResult.wasReduced) {
+            console.log(`[multi-agent] Volume ${vol.volume_number}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+          }
+          contextParts.push(mrResult.summary);
         }
       }
     }

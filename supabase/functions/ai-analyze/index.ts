@@ -399,39 +399,50 @@ serve(async (req) => {
         const ocrFileIds = new Set(ocrResults?.map((r) => r.file_id) || []);
         const transFileIds = new Set(transcriptions?.map((t) => t.file_id) || []);
 
+        // === Map-Reduce for large document content ===
+        const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
+
         // Process OCR results
         if (!ocrError && ocrResults && ocrResults.length > 0) {
           caseFilesContext +=
             "\n\n## \u0533\u0578\u0580\u056E\u056B \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580 (Case Documents - OCR):\n\n";
-          ocrResults.forEach((ocr, index) => {
+          for (let index = 0; index < ocrResults.length; index++) {
+            const ocr = ocrResults[index];
             const file = fileMap.get(ocr.file_id);
             const fileName = file?.original_filename || "Unknown document";
             const text = ocr.extracted_text || "";
-            // Increased limit to 8000 chars for better analysis
-            const truncatedText = text.length > 8000 ? text.substring(0, 8000) + "..." : text;
+            // Use Map-Reduce for large OCR texts instead of hard truncation
+            const mrResult = await mapReduceSummarize(text);
+            if (mrResult.wasReduced) {
+              console.log(`[ai-analyze] OCR ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+            }
             caseFilesContext += `### \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569 ${index + 1}: ${fileName}\n`;
             if (ocr.confidence) {
               caseFilesContext += `\u054E\u057D\u057F\u0561\u0570\u0578\u0582\u0569\u0575\u0578\u0582\u0576: ${(ocr.confidence * 100).toFixed(0)}%\n`;
             }
-            caseFilesContext += `${truncatedText}\n\n`;
-          });
+            caseFilesContext += `${mrResult.summary}\n\n`;
+          }
         }
 
         // Process audio transcriptions
         if (!transError && transcriptions && transcriptions.length > 0) {
           caseFilesContext +=
             "\n\n## \u0531\u0578\u0582\u0564\u056B\u0578 \u057F\u0580\u0561\u0576\u057D\u056F\u0580\u056B\u057A\u0581\u056B\u0561\u0576\u0565\u0580 (Audio Transcriptions):\n\n";
-          transcriptions.forEach((trans, index) => {
+          for (let index = 0; index < transcriptions.length; index++) {
+            const trans = transcriptions[index];
             const file = fileMap.get(trans.file_id);
             const fileName = file?.original_filename || "Unknown audio";
             const text = trans.transcription_text || "";
-            const truncatedText = text.length > 8000 ? text.substring(0, 8000) + "..." : text;
+            const mrResult = await mapReduceSummarize(text);
+            if (mrResult.wasReduced) {
+              console.log(`[ai-analyze] Transcription ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+            }
             caseFilesContext += `### \u0531\u0578\u0582\u0564\u056B\u0578 ${index + 1}: ${fileName}\n`;
             if (trans.confidence) {
               caseFilesContext += `\u054E\u057D\u057F\u0561\u0570\u0578\u0582\u0569\u0575\u0578\u0582\u0576: ${(trans.confidence * 100).toFixed(0)}%\n`;
             }
-            caseFilesContext += `${truncatedText}\n\n`;
-          });
+            caseFilesContext += `${mrResult.summary}\n\n`;
+          }
         }
 
         // For files without OCR/transcription, try to read them directly
@@ -488,12 +499,14 @@ serve(async (req) => {
                 if (!downloadError && fileData) {
                   try {
                     const buffer = await fileData.arrayBuffer();
-                    // Use shared DOCX parser instead of inline regex
                     const { parseDocx } = await import("../_shared/docx-parser.ts");
                     const docxResult = await parseDocx(buffer);
                     if (docxResult.text) {
-                      const truncatedText = docxResult.text.length > 8000 ? docxResult.text.substring(0, 8000) + "..." : docxResult.text;
-                      caseFilesContext += `\n### DOCX \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${truncatedText}\n\n`;
+                      const mrResult = await mapReduceSummarize(docxResult.text);
+                      if (mrResult.wasReduced) {
+                        console.log(`[ai-analyze] DOCX ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+                      }
+                      caseFilesContext += `\n### DOCX \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${mrResult.summary}\n\n`;
                     }
                     if (docxResult.warnings.length > 0) {
                       console.warn(`[ai-analyze] DOCX warnings for ${fileName}:`, docxResult.warnings);
@@ -515,8 +528,11 @@ serve(async (req) => {
 
                 if (!downloadError && fileData) {
                   const text = await fileData.text();
-                  const truncatedText = text.length > 8000 ? text.substring(0, 8000) + "..." : text;
-                  caseFilesContext += `\n### TXT \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${truncatedText}\n\n`;
+                  const mrResult = await mapReduceSummarize(text);
+                  if (mrResult.wasReduced) {
+                    console.log(`[ai-analyze] TXT ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+                  }
+                  caseFilesContext += `\n### TXT \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${mrResult.summary}\n\n`;
                 }
               }
             } catch (fileReadError) {
