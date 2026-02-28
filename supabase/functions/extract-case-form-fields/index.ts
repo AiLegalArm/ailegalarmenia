@@ -191,7 +191,7 @@ serve(async (req) => {
     // Build user prompt — apply map-reduce if text is too large
     let filesBlock = textParts.length > 0 ? textParts.join("\n\n") : "";
     
-    if (filesBlock.length > 30000) {
+    if (filesBlock.length > 100_000) {
       const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
       const mrResult = await mapReduceSummarize(filesBlock);
       if (mrResult.wasReduced) {
@@ -219,7 +219,7 @@ serve(async (req) => {
       {
         functionName: "extract-case-fields",
         bypassReason: "multimodal",
-        timeoutMs: 180000,
+        timeoutMs: 300_000,
       },
     );
 

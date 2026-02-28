@@ -223,7 +223,7 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
       toast.info(t('cases:extracting_fields', 'Extracting facts and legal question...'));
       
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180_000);
+      const timeout = setTimeout(() => controller.abort(), 300_000);
       
       const session = (await supabase.auth.getSession()).data.session;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
