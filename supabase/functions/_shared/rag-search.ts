@@ -120,6 +120,7 @@ async function callVectorSearch(
       },
       {
         requestId: opts.requestId,
+        timeoutMs: 60_000,
       },
     );
 
