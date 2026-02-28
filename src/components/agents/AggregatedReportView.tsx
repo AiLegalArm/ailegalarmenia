@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, FileText, Download, Printer, CheckCircle2, AlertTriangle, Shield, Scale } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { stripMarkdown } from "@/lib/strip-markdown";
 import { toast } from "sonner";
 import type { AggregatedReport, AgentAnalysisRun } from "./types";
 import { AGENT_CONFIGS } from "./types";
@@ -187,9 +187,9 @@ export function AggregatedReportView({
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px]">
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown>{report.executive_summary || t("ai:no_content")}</ReactMarkdown>
-                </div>
+                <p className="text-sm whitespace-pre-wrap">
+                  {stripMarkdown(report.executive_summary || t("ai:no_content"))}
+                </p>
               </ScrollArea>
             </CardContent>
           </Card>
@@ -205,9 +205,9 @@ export function AggregatedReportView({
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px]">
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown>{report.evidence_summary || t("ai:no_content")}</ReactMarkdown>
-                </div>
+                <p className="text-sm whitespace-pre-wrap">
+                  {stripMarkdown(report.evidence_summary || t("ai:no_content"))}
+                </p>
               </ScrollArea>
             </CardContent>
           </Card>
@@ -223,9 +223,9 @@ export function AggregatedReportView({
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px]">
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown>{report.violations_summary || t("ai:no_content")}</ReactMarkdown>
-                </div>
+                <p className="text-sm whitespace-pre-wrap">
+                  {stripMarkdown(report.violations_summary || t("ai:no_content"))}
+                </p>
               </ScrollArea>
             </CardContent>
           </Card>
@@ -244,23 +244,23 @@ export function AggregatedReportView({
                 <div className="space-y-6">
                   <div>
                     <h4 className="font-semibold mb-2">{t("ai:defense_arguments")}</h4>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown>{report.defense_strategy || t("ai:no_content")}</ReactMarkdown>
-                    </div>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {stripMarkdown(report.defense_strategy || t("ai:no_content"))}
+                    </p>
                   </div>
                   
                   <div>
                     <h4 className="font-semibold mb-2">{t("ai:prosecution_weaknesses")}</h4>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown>{report.prosecution_weaknesses || t("ai:no_content")}</ReactMarkdown>
-                    </div>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {stripMarkdown(report.prosecution_weaknesses || t("ai:no_content"))}
+                    </p>
                   </div>
                   
                   <div>
                     <h4 className="font-semibold mb-2">{t("ai:recommendations")}</h4>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown>{report.recommendations || t("ai:no_content")}</ReactMarkdown>
-                    </div>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {stripMarkdown(report.recommendations || t("ai:no_content"))}
+                    </p>
                   </div>
                 </div>
               </ScrollArea>
@@ -275,9 +275,9 @@ export function AggregatedReportView({
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[600px]">
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown>{report.full_report || t("ai:no_content")}</ReactMarkdown>
-                </div>
+                <p className="text-sm whitespace-pre-wrap">
+                  {stripMarkdown(report.full_report || t("ai:no_content"))}
+                </p>
               </ScrollArea>
             </CardContent>
           </Card>

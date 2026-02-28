@@ -16,7 +16,7 @@ import {
   Minimize2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
+import { stripMarkdown } from '@/lib/strip-markdown';
 import { useReferencesText } from '@/lib/references-store';
 
 interface Message {
@@ -276,7 +276,7 @@ export function LegalChatBot({ isOpen: controlledIsOpen, onOpenChange, reference
                       : "bg-muted"
                   )}
                 >
-                  <p className="whitespace-pre-wrap">{msg.role === 'assistant' ? (msg.content || '\u2026').replace(/\*\*/g, '').replace(/^#{1,6}\s/gm, '').replace(/^[-*]\s/gm, '\u2022 ') : msg.content}</p>
+                  <p className="whitespace-pre-wrap">{msg.role === 'assistant' ? stripMarkdown(msg.content || '\u2026') : msg.content}</p>
                 </div>
               </div>
             ))}

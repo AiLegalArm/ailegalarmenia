@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { stripMarkdown } from '@/lib/strip-markdown';
 import { useTranslation } from 'react-i18next';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -659,7 +660,7 @@ export function CaseAIAnalysisPanel({
                         </Button>
                       </div>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap mb-3">{result.analysis}</div>
+                    <div className="text-sm whitespace-pre-wrap mb-3">{stripMarkdown(result.analysis)}</div>
                     {result.sources && result.sources.length > 0 && (
                       <div className="mt-3 pt-3 border-t">
                         <p className="text-xs font-semibold text-muted-foreground mb-2">
