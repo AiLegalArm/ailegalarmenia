@@ -52,7 +52,7 @@ export function CourtDateReminderSuggestion({
       reminder_type: 'court_hearing',
       priority: 'high',
       event_datetime: courtDateTime.toISOString(),
-      notify_before: [1440, 60], // 1 day and 1 hour before
+      notify_before: [2880, 120], // 2 days and 2 hours before
     };
 
     createReminder.mutate(data, {
