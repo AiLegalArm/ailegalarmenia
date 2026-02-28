@@ -200,19 +200,27 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
             return (
               <Card 
                 key={agent.type}
-                className={`cursor-pointer transition-all duration-200 active:scale-[0.96] w-14 sm:w-auto shrink-0 ${
-                  isCurrentAgent ? "ring-1.5 ring-primary shadow-sm" : ""
-                } ${status === "completed" ? "bg-accent/50" : ""}`}
+                className={`cursor-pointer transition-all duration-300 active:scale-[0.96] w-14 sm:w-auto shrink-0 ${
+                  isCurrentAgent
+                    ? "ring-2 ring-primary shadow-lg shadow-primary/25 animate-pulse scale-105"
+                    : ""
+                } ${status === "completed" ? "bg-accent/50 ring-1 ring-green-500/30" : ""} ${status === "failed" ? "ring-1 ring-destructive/30" : ""}`}
                 onClick={() => !isLoading && runAgent(caseId, agent.type, referencesText || undefined)}
               >
-                <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[52px] sm:min-h-[60px]">
-                  <div className="text-sm sm:text-lg mb-0.5">{agent.icon}</div>
-                  <div className="text-[8px] sm:text-[10px] font-medium truncate w-full leading-tight" title={getAgentName(agent)}>
-                    {getAgentName(agent).split(" ")[0]}
-
+                <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[52px] sm:min-h-[60px] relative overflow-hidden">
+                  {isCurrentAgent && (
+                    <div className="absolute inset-0 bg-primary/10 animate-[pulse_1.5s_ease-in-out_infinite]" />
+                  )}
+                  <div className={`text-sm sm:text-lg mb-0.5 relative z-10 ${isCurrentAgent ? "animate-bounce" : ""}`}>
+                    {agent.icon}
                   </div>
-                  <div className="mt-0.5 flex justify-center">
-                    {status ? getStatusIcon(status) : (
+                  <div className={`text-[8px] sm:text-[10px] font-medium truncate w-full leading-tight relative z-10 ${isCurrentAgent ? "text-primary font-bold" : ""}`} title={getAgentName(agent)}>
+                    {getAgentName(agent).split(" ")[0]}
+                  </div>
+                  <div className="mt-0.5 flex justify-center relative z-10">
+                    {isCurrentAgent ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    ) : status ? getStatusIcon(status) : (
                       <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-muted" />
                     )}
                   </div>
