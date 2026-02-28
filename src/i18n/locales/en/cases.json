@@ -43,6 +43,8 @@
   "party_role_echr_government": "Government (Respondent)",
   "no_cases": "No cases found",
   "case_created": "Case created successfully!",
+  "case_number_duplicate": "Case number already exists",
+  "case_number_duplicate_desc": "A case with this number already exists. Please use a different number.",
   "case_updated": "Case updated successfully!",
   "case_deleted": "Case deleted successfully!",
   "confirm_delete": "Are you sure you want to delete this case?",

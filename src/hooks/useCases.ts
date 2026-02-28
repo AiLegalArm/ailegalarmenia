@@ -89,9 +89,10 @@ export function useCases(filters: CaseFilters = {}) {
       });
     },
     onError: (error) => {
+      const isDuplicate = error.message?.includes('cases_case_number_active_key');
       toast({
-        title: t('errors:operation_failed'),
-        description: error.message,
+        title: isDuplicate ? t('case_number_duplicate') : t('errors:operation_failed'),
+        description: isDuplicate ? t('case_number_duplicate_desc') : error.message,
         variant: 'destructive',
       });
     },
