@@ -16,7 +16,7 @@ export function NotesBubble() {
   return (
     <>
       {!isOpen && (
-        <div className="fixed bottom-6 right-24 z-50 flex flex-col items-end gap-2">
+        <div className="fixed bottom-4 right-[4.5rem] sm:bottom-6 sm:right-24 z-50 flex flex-col items-end gap-2 pb-safe">
           {showTooltip && (
             <div className="relative flex items-center">
               <div className="bg-card border shadow-lg rounded-2xl rounded-br-sm px-4 py-2 text-sm font-medium text-foreground max-w-[200px] text-right animate-in fade-in slide-in-from-bottom-2 duration-500">
