@@ -14,53 +14,84 @@ const COURTS_MAP: Record<string, string> = {
   "\u0535\u0580\u0587\u0561\u0576": "\u0535\u0580\u0587\u0561\u0576 \u0584\u0561\u0572\u0561\u0584\u056b \u0568\u0576\u0564\u0570\u0561\u0576\u0578\u0582\u0580 \u056b\u0580\u0561\u057e\u0561\u057d\u0578\u0582\u0569\u0575\u0561\u0576 \u0584\u0580\u0565\u0561\u056f\u0561\u0576 \u0564\u0561\u057f\u0561\u0580\u0561\u0576",
 };
 
-const SYSTEM_PROMPT = `You are a Senior Legal Document Analyst specializing in Armenian law (RA). Perform DEEP PROFESSIONAL extraction from legal documents.
+const SYSTEM_PROMPT = `Ты — юридический парсер документов для автозаполнения карточки дела в системе AI Legal Armenia (юрисдикция РА).
 
-EXTRACTION PROTOCOL:
+Тебе передаются тексты одного или нескольких загруженных файлов (включая OCR).
+Тексты могут содержать документы разных стадий (первая инстанция, апелляция, кассация и т.д.).
 
-1. CASE NUMBER (\u0533\u0578\u0580\u056E\u056B \u0570\u0561\u0574\u0561\u0580):
-   - Patterns: \u053F\u0534/1718/02/24, \u0535\u0531\u0534/1234/01/25, \u053F\u0534-1234-2024, XXXX/NN/NN
-   - Also look for: \u00AB\u0563\u0578\u0580\u056E N\u00BB, \u00AB\u0563\u0578\u0580\u056E \u0569\u056B\u057E\u00BB, \u00AB\u0434\u0435\u043B\u043E N\u00BB
-   - Return EXACT case number as written
+Твоя задача — вернуть строго JSON с полями:
+case_number, title, description, case_type, party_role, court_name, current_stage.
 
-2. TITLE: Short case title in Armenian (max 100 chars), include parties and charge type
+СТРОГИЕ ПРАВИЛА:
 
-3. DESCRIPTION: Professional legal summary (3-4 sentences) in Armenian:
-   - Criminal charge / legal qualification (e.g., \u0540\u0540 \u0554\u0555 \u0570\u0578\u0564\u057E\u0561\u056E 104)
-   - All parties: defendant, victim, investigative body
-   - Court name and jurisdiction
-   - Current procedural stage
+1) Верни ТОЛЬКО валидный JSON, без markdown-обёрток.
+2) Ничего не выдумывай — извлекай только то, что есть в документах.
+3) Если поле отсутствует — ставь null или пустую строку "".
+4) PII (адреса, телефоны, паспортные данные) маскируй "***".
+5) description — 3–8 предложений: предмет спора/обвинения + покрытые стадии + ключевые процессуальные действия + важные даты.
 
-4. CASE TYPE DETECTION:
-   - \u00AB\u0584\u0580\u0565\u0561\u056F\u0561\u0576\u00BB / \u00AB\u0574\u0565\u0572\u0561\u0564\u0580\u0561\u0576\u0584\u00BB / \u00AB\u053F\u0534\u00BB = "criminal"
-   - \u00AB\u0584\u0561\u0572\u0561\u0584\u0561\u0581\u056B\u0561\u056F\u0561\u0576\u00BB / \u00AB\u0570\u0561\u0575\u0581\u00BB = "civil"
-   - \u00AB\u057E\u0561\u0580\u0579\u0561\u056F\u0561\u0576\u00BB = "administrative"
-   - ECHR / \u00AB\u0415\u0421\u041F\u0427\u00BB / \u00AB\u0535\u054D\u054A\u054E\u00BB = "echr"
+--------------------------------------------------
+ОПРЕДЕЛЕНИЕ current_stage (КРИТИЧНО):
 
-5. PARTY ROLE: Determine from document perspective:
-   - Criminal: "defendant"|"defense"|"prosecutor"|"victim"
-   - Civil: "claimant"|"defendant"|"third_party"
-   - Administrative: "applicant"|"administrative_body"
+Документы могут охватывать ВСЕ стадии от первой инстанции до кассации.
 
-6. COURT NAME: Full official Armenian name as found in the document
+Алгоритм:
 
-7. CURRENT STAGE: Determine from procedural context:
-   - "preliminary" \u2014 investigation/pre-trial
-   - "first_instance" \u2014 first court hearing
-   - "appeal" \u2014 appeal stage
-   - "cassation" \u2014 cassation stage
-   - "echr" \u2014 ECHR proceedings
+1) Для каждого фрагмента определи:
+   - doc_date (дата вынесения/создания/заседания)
+   - stage_hint:
 
-Return a JSON object with fields: case_number, title, description, case_type, party_role, court_name, current_stage.
+      cassation \u2192 "\u054E\u0573\u057C\u0561\u0562\u0565\u056F", "\u043A\u0430\u0441\u0441\u0430\u0446", "\u056F\u0561\u057D\u0561\u0581\u056B\u0578\u0576"
+      appeal \u2192 "\u057E\u0565\u0580\u0561\u0584\u0576\u0576\u056B\u0579", "\u0561\u057A\u0565\u056C\u056C\u044F\u0446"
+      first_instance \u2192 "\u0561\u057C\u0561\u057B\u056B\u0576 \u0561\u057F\u0575\u0561\u0576", "\u043F\u0435\u0440\u0432\u0430\u044F \u0438\u043D\u0441\u0442\u0430\u043D\u0446"
+      pretrial \u2192 "\u0584\u0576\u0576\u0579\u0561\u056F\u0561\u0576", "\u0576\u0561\u056D\u0561\u0584\u0576\u0576\u0578\u0582\u0569\u0575\u0578\u0582\u0576", "\u0441\u043B\u0435\u0434\u0441\u0442\u0432"
+      enforcement \u2192 "\u0534\u0531\u0540\u053F", "\u0438\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D"
 
-CRITICAL RULES:
-- Return ONLY valid JSON, no markdown fences
-- If a field cannot be determined, return empty string ""
-- case_type must be exactly one of: "criminal", "civil", "administrative", "echr"
-- Read ALL pages thoroughly \u2014 do not skip any content
-- Extract information from headers, footers, stamps, seals
-- For scanned documents: read handwritten text carefully
-- NEVER fabricate or guess \u2014 only extract what is present`;
+2) Если есть даты:
+   current_stage = стадия документа с САМЫМ ПОЗДНИМ doc_date.
+
+3) Если дат нет:
+   выбери по приоритету:
+   cassation > appeal > first_instance > pretrial > enforcement > unknown
+
+4) В description обязательно укажи:
+   "Материалы охватывают стадии: <перечень>."
+
+Допустимые значения current_stage: "pretrial", "first_instance", "appeal", "cassation", "enforcement", "unknown".
+
+--------------------------------------------------
+
+ОПРЕДЕЛЕНИЕ case_type:
+
+criminal \u2192 "\u0584\u0580\u0565\u0561\u056F\u0561\u0576 \u0563\u0578\u0580\u056E", \u0554\u0555, \u0574\u0565\u0572\u0561\u0564\u0580\u0575\u0561\u056C
+civil \u2192 "\u0584\u0561\u0572\u0561\u0584\u0561\u0581\u056B\u0561\u056F\u0561\u0576 \u0563\u0578\u0580\u056E", \u0570\u0561\u0575\u0581, \u057A\u0561\u0570\u0561\u0576\u057B
+administrative \u2192 "\u057E\u0561\u0580\u0579\u0561\u056F\u0561\u0576 \u0563\u0578\u0580\u056E"
+если конфликт — выбери по большинству явных признаков.
+
+Допустимые значения case_type: "criminal", "civil", "administrative" или null.
+
+--------------------------------------------------
+
+title:
+
+Формат: "<тип дела> — <предмет> — <инстанция>"
+Пример: "Гражданское дело — компенсация вреда — кассация"
+Максимум 100 символов.
+
+--------------------------------------------------
+
+party_role:
+
+lawyer → если явные признаки адвокатского представительства
+client → если заявитель/обвиняемый без указания роли адвоката
+auditor → если аудит/проверка
+иначе other
+
+--------------------------------------------------
+
+court_name: Полное официальное армянское название суда как указано в документе.
+
+case_number: Паттерны: ԿԴ/1718/02/24, ԵԱԴ/1234/01/25, ԿԴ-1234-2024, XXXX/NN/NN. Верни ТОЧНЫЙ номер как написан.`;
 
 interface FileRef {
   bucket: string;
@@ -199,15 +230,22 @@ serve(async (req) => {
     }
 
     // Validate case_type
-    const validTypes = ["criminal", "civil", "administrative", "echr"];
+    const validTypes = ["criminal", "civil", "administrative"];
     if (!validTypes.includes(extracted.case_type || "")) {
-      extracted.case_type = "criminal";
+      extracted.case_type = "";
     }
 
-    // Validate stage
-    const validStages = ["preliminary", "first_instance", "appeal", "cassation", "echr"];
+    // Validate stage — map new values and legacy values
+    const stageMap: Record<string, string> = {
+      preliminary: "pretrial",
+      echr: "unknown",
+    };
+    if (extracted.current_stage && stageMap[extracted.current_stage]) {
+      extracted.current_stage = stageMap[extracted.current_stage];
+    }
+    const validStages = ["pretrial", "first_instance", "appeal", "cassation", "enforcement", "unknown"];
     if (!validStages.includes(extracted.current_stage || "")) {
-      extracted.current_stage = "preliminary";
+      extracted.current_stage = "unknown";
     }
 
     return json({ success: true, fields: extracted });
