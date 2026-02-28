@@ -96,6 +96,7 @@ serve(async (req) => {
       "image/png",
       "image/jpg",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
     ];
     const { data: caseFiles } = await supabase
       .from("case_files")
@@ -163,6 +164,31 @@ serve(async (req) => {
           const isImage = IMAGE_MIME_TYPES.includes(mimeType);
           const isPdf = mimeType === "application/pdf";
           const isDocx = mimeType === DOCX_MIME;
+          const isTxt = mimeType === "text/plain";
+
+          // === TXT: read directly as text ===
+          if (isTxt) {
+            console.log(`Downloading TXT from storage: ${file.storage_path}`);
+            const { data: fileData, error: downloadError } = await supabase.storage
+              .from("case-files")
+              .download(file.storage_path);
+
+            if (downloadError || !fileData) {
+              console.warn(`Failed to download TXT ${file.storage_path}: ${downloadError?.message}`);
+              continue;
+            }
+
+            const txtContent = await fileData.text();
+            const trimmed = txtContent.substring(0, 15000);
+            console.log(`TXT read: ${trimmed.length} chars from ${file.original_filename}`);
+
+            context += `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${trimmed}`;
+            userMessageContent.push({
+              type: "text",
+              text: `\n\n=== TEXT DOCUMENT: ${file.original_filename} ===\n${trimmed}`
+            });
+            continue;
+          }
 
           // === DOCX: parse and inject text ===
           if (isDocx) {
