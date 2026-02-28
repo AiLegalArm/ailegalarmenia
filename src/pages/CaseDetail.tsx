@@ -310,20 +310,9 @@ const CaseDetail = () => {
               </div>
 
               <TabsContent value="details" className="mt-4 sm:mt-6">
-                <Card className="card-premium overflow-hidden">
-                  <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 sm:p-6">
-                    <CardTitle className="text-mobile-lg sm:text-lg">{t('description')}</CardTitle>
-                    <PdfExportButton onClick={handleExportCaseDetails} />
-                  </CardHeader>
-                  <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0">
-                    <p className="whitespace-pre-wrap break-words overflow-wrap-anywhere text-mobile-sm sm:text-sm leading-relaxed">
-                      {caseData.description || t('common:no_description', 'No description')}
-                    </p>
-                  </CardContent>
-                </Card>
-
                 <CaseFactsEditor
                   caseId={caseData.id}
+                  description={caseData.description}
                   facts={caseData.facts}
                   legalQuestion={caseData.legal_question}
                   aiCreditsExhausted={aiCreditsExhausted}

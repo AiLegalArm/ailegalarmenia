@@ -12,6 +12,7 @@ import { getFunctionsInvokeErrorMessage, isNoDataForExtractionMessage } from '@/
 
 interface CaseFactsEditorProps {
   caseId: string;
+  description?: string | null;
   facts?: string | null;
   legalQuestion?: string | null;
   aiCreditsExhausted: boolean;
@@ -20,6 +21,7 @@ interface CaseFactsEditorProps {
 
 export function CaseFactsEditor({
   caseId,
+  description,
   facts,
   legalQuestion,
   aiCreditsExhausted,
@@ -30,12 +32,14 @@ export function CaseFactsEditor({
   const queryClient = useQueryClient();
   
   const [isEditingFields, setIsEditingFields] = useState(false);
+  const [editDescription, setEditDescription] = useState('');
   const [editFacts, setEditFacts] = useState('');
   const [editLegalQuestion, setEditLegalQuestion] = useState('');
   const [isSavingFields, setIsSavingFields] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
 
   const handleStartEditFields = () => {
+    setEditDescription(description || '');
     setEditFacts(facts || '');
     setEditLegalQuestion(legalQuestion || '');
     setIsEditingFields(true);
@@ -43,6 +47,7 @@ export function CaseFactsEditor({
 
   const handleCancelEditFields = () => {
     setIsEditingFields(false);
+    setEditDescription('');
     setEditFacts('');
     setEditLegalQuestion('');
   };
@@ -53,6 +58,7 @@ export function CaseFactsEditor({
       const { error } = await supabase
         .from('cases')
         .update({
+          description: editDescription,
           facts: editFacts,
           legal_question: editLegalQuestion,
           updated_at: new Date().toISOString()
@@ -195,6 +201,17 @@ export function CaseFactsEditor({
           <>
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1 block">
+                {t('description')}
+              </label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder={t('common:no_description', 'No description')}
+                className="min-h-[100px]"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1 block">
                 {t('cases:facts', 'Facts')} ({t('cases:facts_hy', '\u0553\u0561\u057D\u057F\u0565\u0580')})
               </label>
               <Textarea
@@ -218,6 +235,14 @@ export function CaseFactsEditor({
           </>
         ) : (
           <>
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
+                {t('description')}
+              </p>
+              <p className="whitespace-pre-wrap break-words text-sm border rounded-md p-3 bg-muted/50 min-h-[60px]" style={{ overflowWrap: 'anywhere' }}>
+                {description || t('common:no_description', 'No description')}
+              </p>
+            </div>
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-1">
                 {t('cases:facts', 'Facts')} ({t('cases:facts_hy', '\u0553\u0561\u057D\u057F\u0565\u0580')})
