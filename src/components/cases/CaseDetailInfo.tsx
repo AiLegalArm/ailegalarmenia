@@ -25,7 +25,7 @@ export function CaseDetailInfo({
   const { t } = useTranslation(['cases', 'common']);
 
   return (
-    <div className="space-y-4 sm:space-y-6 overflow-hidden">
+    <div className="space-y-4 sm:space-y-6 overflow-hidden max-w-full">
       {/* Case Info */}
       <Card className="card-premium overflow-hidden">
         <CardHeader className="p-4 sm:p-6">
