@@ -169,7 +169,7 @@ export function CaseFileUpload({ caseId }: CaseFileUploadProps) {
           </label>
         </Button>
         <span className="text-xs text-muted-foreground">
-          PDF, DOC, DOCX, JPG, PNG, MP3, WAV, M4A, TXT
+          PDF, DOCX, JPG, PNG, MP3, WAV, M4A, TXT
         </span>
       </div>
 

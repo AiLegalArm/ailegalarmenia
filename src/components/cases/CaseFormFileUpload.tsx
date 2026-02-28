@@ -82,7 +82,7 @@ export function CaseFormFileUpload({ files, onFilesChange }: CaseFormFileUploadP
             <span className="text-sm text-muted-foreground"> {t('common:or')} drag & drop</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            PDF, DOC, DOCX, JPG, PNG, MP3, WAV, M4A
+            PDF, DOCX, JPG, PNG, MP3, WAV, M4A
           </p>
         </div>
       </div>
