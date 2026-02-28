@@ -27,6 +27,7 @@ verify_jwt = false
 
 [functions.extract-case-form-fields]
 verify_jwt = false
+wall_clock_limit = 300
 
 [functions.analyze-files-for-complaint]
 
