@@ -314,9 +314,10 @@ serve(async (req) => {
         { role: "user", content: userMessageContent }
       ],
       {
-        functionName: "extract-case-fields",
+      functionName: "extract-case-fields",
         bypassReason: "tool_calling",
-        timeoutMs: 120000,
+        timeoutMs: 180000,
+        maxRetries: 1,
         extraBody: {
           tools: [
             {
