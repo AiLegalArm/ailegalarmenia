@@ -78,11 +78,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Strict JSON (Gemini Pro) ──────────────────────────────────────────────
   "extract-case-fields": {
-    model: "google/gemini-2.5-pro",
-    temperature: 0.2,
+    model: "openai/gpt-5",
+    temperature: 0.15,
     max_tokens: 16000,
-    json_mode: true,
-    description: "Extract fields JSON (Gemini Pro)",
+    description: "Extract fields (GPT-5, deep legal analysis)",
   },
   "kb-search-assistant": {
     model: "google/gemini-2.5-pro",
@@ -239,6 +238,7 @@ const OPENAI_CHAT_ALLOWLIST = new Set([
   "ai-analyze:hallucination_audit",
   "ai-analyze:legal_position_comparator",
   "ai-analyze:draft_deterministic",
+  "extract-case-fields",
   "admin-ai-chat",
 ]);
 
@@ -257,7 +257,6 @@ const STRICT_JSON_ROLES = new Set([
 
 /** Functions that use callJSON with Gemini Pro (tool_calling or schema extraction) */
 const STRICT_JSON_FUNCTIONS = new Set([
-  "extract-case-fields",
   "kb-search-assistant",
 ]);
 

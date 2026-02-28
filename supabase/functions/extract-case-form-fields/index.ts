@@ -14,23 +14,53 @@ const COURTS_MAP: Record<string, string> = {
   "\u0535\u0580\u0587\u0561\u0576": "\u0535\u0580\u0587\u0561\u0576 \u0584\u0561\u0572\u0561\u0584\u056b \u0568\u0576\u0564\u0570\u0561\u0576\u0578\u0582\u0580 \u056b\u0580\u0561\u057e\u0561\u057d\u0578\u0582\u0569\u0575\u0561\u0576 \u0584\u0580\u0565\u0561\u056f\u0561\u0576 \u0564\u0561\u057f\u0561\u0580\u0561\u0576",
 };
 
-const SYSTEM_PROMPT = `You are a Legal Document Analyzer for Armenian law. Extract structured data from legal documents.
+const SYSTEM_PROMPT = `You are a Senior Legal Document Analyst specializing in Armenian law (RA). Perform DEEP PROFESSIONAL extraction from legal documents.
 
-Return a JSON object with these fields:
-- case_number: string (exact case number, e.g. "\u053f\u0534/1058/02/24")
-- title: string (short case title in Armenian, max 100 chars)
-- description: string (2-3 sentence summary in Armenian)
-- case_type: one of "criminal", "civil", "administrative", "echr"
-- party_role: string - for criminal: "defendant"|"defense"|"prosecutor"|"victim"; for civil: "claimant"|"defendant"|"third_party"; for administrative: "applicant"|"administrative_body"
-- court_name: string (court name in Armenian as found in document)
-- current_stage: one of "preliminary"|"first_instance"|"appeal"|"cassation"|"echr"
+EXTRACTION PROTOCOL:
 
-Rules:
-- Return ONLY valid JSON, no markdown
+1. CASE NUMBER (\u0533\u0578\u0580\u056E\u056B \u0570\u0561\u0574\u0561\u0580):
+   - Patterns: \u053F\u0534/1718/02/24, \u0535\u0531\u0534/1234/01/25, \u053F\u0534-1234-2024, XXXX/NN/NN
+   - Also look for: \u00AB\u0563\u0578\u0580\u056E N\u00BB, \u00AB\u0563\u0578\u0580\u056E \u0569\u056B\u057E\u00BB, \u00AB\u0434\u0435\u043B\u043E N\u00BB
+   - Return EXACT case number as written
+
+2. TITLE: Short case title in Armenian (max 100 chars), include parties and charge type
+
+3. DESCRIPTION: Professional legal summary (3-4 sentences) in Armenian:
+   - Criminal charge / legal qualification (e.g., \u0540\u0540 \u0554\u0555 \u0570\u0578\u0564\u057E\u0561\u056E 104)
+   - All parties: defendant, victim, investigative body
+   - Court name and jurisdiction
+   - Current procedural stage
+
+4. CASE TYPE DETECTION:
+   - \u00AB\u0584\u0580\u0565\u0561\u056F\u0561\u0576\u00BB / \u00AB\u0574\u0565\u0572\u0561\u0564\u0580\u0561\u0576\u0584\u00BB / \u00AB\u053F\u0534\u00BB = "criminal"
+   - \u00AB\u0584\u0561\u0572\u0561\u0584\u0561\u0581\u056B\u0561\u056F\u0561\u0576\u00BB / \u00AB\u0570\u0561\u0575\u0581\u00BB = "civil"
+   - \u00AB\u057E\u0561\u0580\u0579\u0561\u056F\u0561\u0576\u00BB = "administrative"
+   - ECHR / \u00AB\u0415\u0421\u041F\u0427\u00BB / \u00AB\u0535\u054D\u054A\u054E\u00BB = "echr"
+
+5. PARTY ROLE: Determine from document perspective:
+   - Criminal: "defendant"|"defense"|"prosecutor"|"victim"
+   - Civil: "claimant"|"defendant"|"third_party"
+   - Administrative: "applicant"|"administrative_body"
+
+6. COURT NAME: Full official Armenian name as found in the document
+
+7. CURRENT STAGE: Determine from procedural context:
+   - "preliminary" \u2014 investigation/pre-trial
+   - "first_instance" \u2014 first court hearing
+   - "appeal" \u2014 appeal stage
+   - "cassation" \u2014 cassation stage
+   - "echr" \u2014 ECHR proceedings
+
+Return a JSON object with fields: case_number, title, description, case_type, party_role, court_name, current_stage.
+
+CRITICAL RULES:
+- Return ONLY valid JSON, no markdown fences
 - If a field cannot be determined, return empty string ""
-- case_type must be exactly one of the enum values
-- Detect case_type from context: "\u0584\u0580\u0565\u0561\u056f\u0561\u0576" = criminal, "\u0584\u0561\u0572\u0561\u0584\u0561\u0581\u056b\u0561\u056f\u0561\u0576" = civil, "\u057e\u0561\u0580\u0579\u0561\u056f\u0561\u0576" = administrative
-- For court_name return the full official Armenian name`;
+- case_type must be exactly one of: "criminal", "civil", "administrative", "echr"
+- Read ALL pages thoroughly \u2014 do not skip any content
+- Extract information from headers, footers, stamps, seals
+- For scanned documents: read handwritten text carefully
+- NEVER fabricate or guess \u2014 only extract what is present`;
 
 serve(async (req) => {
   const cors = handleCors(req);

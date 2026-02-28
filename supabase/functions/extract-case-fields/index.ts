@@ -137,14 +137,14 @@ serve(async (req) => {
     if (ocrResults && ocrResults.length > 0) {
       context += "\n\n=== OCR EXTRACTED TEXT ===";
       ocrResults.forEach((ocr, idx) => {
-        context += `\n\n[Document ${idx + 1}]:\n${(ocr.extracted_text || "").substring(0, 2000)}`;
+        context += `\n\n[Document ${idx + 1}]:\n${(ocr.extracted_text || "").substring(0, 8000)}`;
       });
     }
 
     if (transcriptions && transcriptions.length > 0) {
       context += "\n\n=== AUDIO TRANSCRIPTIONS ===";
       transcriptions.forEach((trans, idx) => {
-        context += `\n\n[Transcription ${idx + 1}]:\n${(trans.transcription_text || "").substring(0, 2000)}`;
+        context += `\n\n[Transcription ${idx + 1}]:\n${(trans.transcription_text || "").substring(0, 8000)}`;
       });
     }
 
