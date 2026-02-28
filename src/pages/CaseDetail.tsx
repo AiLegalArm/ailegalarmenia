@@ -312,6 +312,8 @@ const CaseDetail = () => {
               <TabsContent value="details" className="mt-4 sm:mt-6">
                 <CaseFactsEditor
                   caseId={caseData.id}
+                  caseTitle={caseData.title}
+                  caseNumber={caseData.case_number}
                   description={caseData.description}
                   facts={caseData.facts}
                   legalQuestion={caseData.legal_question}
