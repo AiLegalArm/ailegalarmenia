@@ -426,7 +426,7 @@ export function CaseTimeline({ caseId }: CaseTimelineProps) {
     <div>
       <FilterUI />
       
-      <ScrollArea className="h-[400px] pr-4">
+      <ScrollArea className="h-[400px] pr-2 sm:pr-4">
         <div className="relative">
           {/* Timeline line */}
           <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />

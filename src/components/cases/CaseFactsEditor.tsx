@@ -139,7 +139,7 @@ export function CaseFactsEditor({
   };
 
   return (
-    <Card className="mt-4 card-premium overflow-hidden">
+    <Card className="mt-4 card-premium overflow-hidden max-w-full">
       <CardHeader className="p-4 sm:p-6">
         <CardTitle className="w-full min-w-0 break-words leading-tight text-mobile-lg sm:text-lg" style={{ overflowWrap: 'anywhere' }}>
           {caseTitle} — {caseNumber}
