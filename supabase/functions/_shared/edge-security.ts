@@ -218,7 +218,7 @@ export function handleCors(req: Request): RequestValidation | { corsHeaders?: un
     const fallback = { "Content-Type": "application/json" };
     return {
       errorResponse: new Response(
-        JSON.stringify({ error: "cors_not_allowed", origin: requestOrigin }),
+        JSON.stringify({ error: "cors_not_allowed", origin: origin }),
         { status: 403, headers: fallback },
       ),
     };
