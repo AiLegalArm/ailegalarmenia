@@ -2,7 +2,7 @@
  * edge-security.ts — Fail-closed perimeter guards with dual-mode support.
  *
  * TWO CALL MODES:
- *   1) BROWSER  — Origin required, checked against ALLOWED_ORIGINS allowlist.
+ *   1) BROWSER  — Origin required, checked against allowlist + suffix matching.
  *   2) INTERNAL — No Origin needed; validated via `x-internal-key` header
  *      against INTERNAL_INGEST_KEY secret. Server-to-server calls use this.
  *
@@ -16,11 +16,13 @@
  *     authorization  : Bearer <service_role JWT> (if Supabase client needed)
  *
  * Env vars:
- *   ALLOWED_ORIGINS        – comma-separated allowlist (REQUIRED in prod for browser)
- *   ALLOW_WILDCARD_CORS    – set to "true" to allow "*" when ALLOWED_ORIGINS is missing
- *   INTERNAL_INGEST_KEY    – shared secret for x-internal-key header (REQUIRED in prod)
- *   ALLOW_UNAUTH_INGEST    – set to "true" to bypass auth when key is missing
- *   MAX_INPUT_CHARS        – max text length (default 2 000 000)
+ *   ALLOWED_ORIGINS          – comma-separated exact origin allowlist
+ *   ALLOWED_ORIGIN_SUFFIXES  – comma-separated domain suffixes (e.g. "lovable.app,lovableproject.com")
+ *   ALLOW_WILDCARD_CORS      – "true" enables "*" ONLY when ENV != "production"
+ *   ENV                      – environment identifier ("production", "preview", "dev")
+ *   INTERNAL_INGEST_KEY      – shared secret for x-internal-key header (REQUIRED in prod)
+ *   ALLOW_UNAUTH_INGEST      – set to "true" to bypass auth when key is missing
+ *   MAX_INPUT_CHARS           – max text length (default 2 000 000)
  */
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────
@@ -65,7 +67,7 @@ export function getRequestMode(req: Request): "browser" | "internal" {
   return isValidInternalCall(req) ? "internal" : "browser";
 }
 
-// ─── CORS ALLOWLIST ────────────────────────────────────────────────
+// ─── CORS ALLOWLIST (suffix-based + exact match) ──────────────────
 
 function getAllowedOrigins(): string[] {
   const raw = Deno.env.get("ALLOWED_ORIGINS") || "";
@@ -76,19 +78,68 @@ function getAllowedOrigins(): string[] {
     .filter(Boolean);
 }
 
+function getAllowedOriginSuffixes(): string[] {
+  const raw = Deno.env.get("ALLOWED_ORIGIN_SUFFIXES") || "";
+  if (!raw.trim()) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function isWildcardAllowed(): boolean {
-  return Deno.env.get("ALLOW_WILDCARD_CORS") === "true";
+  if (Deno.env.get("ALLOW_WILDCARD_CORS") !== "true") return false;
+  // In production, wildcard is NEVER allowed even if flag is set
+  const env = (Deno.env.get("ENV") || "").toLowerCase();
+  if (env === "production") return false;
+  return true;
+}
+
+/**
+ * Parse hostname from an origin string.
+ * e.g. "https://foo.lovable.app" → "foo.lovable.app"
+ */
+export function parseOriginHostname(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if origin is allowed by exact match OR suffix match.
+ */
+export function isAllowedOrigin(origin: string): boolean {
+  // 1) Exact match in ALLOWED_ORIGINS
+  const exactList = getAllowedOrigins();
+  if (exactList.includes(origin)) return true;
+
+  // 2) Suffix match in ALLOWED_ORIGIN_SUFFIXES
+  const suffixes = getAllowedOriginSuffixes();
+  if (suffixes.length > 0) {
+    const hostname = parseOriginHostname(origin);
+    if (hostname) {
+      for (const suffix of suffixes) {
+        // Must end with ".suffix" or be exactly "suffix"
+        if (hostname === suffix || hostname.endsWith(`.${suffix}`)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
  * Build CORS headers for browser requests. Fail-closed:
- * - If ALLOWED_ORIGINS is unset and ALLOW_WILDCARD_CORS !== "true" → returns null (caller must 403).
- * - If origin matches allowlist → reflect it.
- * - If origin doesn't match → null.
- * - If wildcard explicitly allowed → "*".
+ * - If wildcard allowed (non-production + flag) → "*".
+ * - If origin matches exact list or suffix → reflect origin + Vary: Origin.
+ * - Otherwise → null (caller must 403).
  */
 export function getCorsHeaders(requestOrigin?: string | null): Record<string, string> | null {
-  // Wildcard takes priority — allows all origins when explicitly enabled
+  // Wildcard only in non-production environments when explicitly enabled
   if (isWildcardAllowed()) {
     return {
       "Access-Control-Allow-Origin": "*",
@@ -97,22 +148,18 @@ export function getCorsHeaders(requestOrigin?: string | null): Record<string, st
     };
   }
 
-  const allowed = getAllowedOrigins();
+  if (!requestOrigin) return null;
 
-  if (allowed.length === 0) {
-    return null;
+  if (isAllowedOrigin(requestOrigin)) {
+    return {
+      "Access-Control-Allow-Origin": requestOrigin,
+      "Access-Control-Allow-Headers": DEFAULT_ALLOWED_HEADERS,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Vary": "Origin",
+    };
   }
 
-  if (!requestOrigin || !allowed.includes(requestOrigin)) {
-    return null;
-  }
-
-  return {
-    "Access-Control-Allow-Origin": requestOrigin,
-    "Access-Control-Allow-Headers": DEFAULT_ALLOWED_HEADERS,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Vary": "Origin",
-  };
+  return null;
 }
 
 // ─── DUAL-MODE REQUEST HANDLER ─────────────────────────────────────
@@ -152,17 +199,16 @@ export function handleCors(req: Request): RequestValidation | { corsHeaders?: un
   // ── Mode 2: Browser call — standard CORS ──
   const origin = req.headers.get("origin");
 
-  // No Origin header = server-to-server / cron call (not a browser).
-  // Allow it through with permissive CORS headers (there's no browser to enforce CORS anyway).
+  // No Origin header and no internal key → fail-closed for browser-facing functions.
+  // Server-to-server calls without browser should use x-internal-key.
   if (!origin) {
-    if (req.method === "OPTIONS") {
-      return {
-        corsHeaders: INTERNAL_CORS_HEADERS,
-        errorResponse: new Response(null, { status: 204, headers: INTERNAL_CORS_HEADERS }),
-        mode: "browser",
-      };
-    }
-    return { corsHeaders: INTERNAL_CORS_HEADERS, mode: "browser" };
+    const fallback = { "Content-Type": "application/json" };
+    return {
+      errorResponse: new Response(
+        JSON.stringify({ error: "cors_not_allowed", reason: "Origin header required for browser requests" }),
+        { status: 403, headers: fallback },
+      ),
+    };
   }
 
   const headers = getCorsHeaders(origin);
@@ -172,7 +218,7 @@ export function handleCors(req: Request): RequestValidation | { corsHeaders?: un
     const fallback = { "Content-Type": "application/json" };
     return {
       errorResponse: new Response(
-        JSON.stringify({ error: "CORS not configured or origin not allowed" }),
+        JSON.stringify({ error: "cors_not_allowed", origin: requestOrigin }),
         { status: 403, headers: fallback },
       ),
     };

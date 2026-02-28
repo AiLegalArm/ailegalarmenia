@@ -21,6 +21,8 @@ import {
   validateBrowserRequest,
   validateInternalRequest,
   buildInternalHeaders,
+  isAllowedOrigin,
+  parseOriginHostname,
 } from "./edge-security.ts";
 
 // ─── Helper to save/restore env ────────────────────────────────────
@@ -59,14 +61,14 @@ function withEnv(
 // ─── CORS TESTS (fail-closed for browser) ──────────────────────────
 
 Deno.test("getCorsHeaders: no ALLOWED_ORIGINS, no wildcard flag -> null", () => {
-  return withEnv({ ALLOWED_ORIGINS: undefined, ALLOW_WILDCARD_CORS: undefined }, () => {
+  return withEnv({ ALLOWED_ORIGINS: undefined, ALLOW_WILDCARD_CORS: undefined, ALLOWED_ORIGIN_SUFFIXES: undefined, ENV: undefined }, () => {
     const headers = getCorsHeaders("https://evil.com");
     assertEquals(headers, null);
   });
 });
 
-Deno.test("getCorsHeaders: no ALLOWED_ORIGINS + ALLOW_WILDCARD_CORS=true -> '*'", () => {
-  return withEnv({ ALLOWED_ORIGINS: undefined, ALLOW_WILDCARD_CORS: "true" }, () => {
+Deno.test("getCorsHeaders: no ALLOWED_ORIGINS + ALLOW_WILDCARD_CORS=true + ENV=dev -> '*'", () => {
+  return withEnv({ ALLOWED_ORIGINS: undefined, ALLOW_WILDCARD_CORS: "true", ALLOWED_ORIGIN_SUFFIXES: undefined, ENV: "dev" }, () => {
     const headers = getCorsHeaders("https://evil.com");
     assertExists(headers);
     assertEquals(headers!["Access-Control-Allow-Origin"], "*");
@@ -91,6 +93,105 @@ Deno.test("getCorsHeaders: disallowed origin -> null", () => {
 Deno.test("getCorsHeaders: null origin -> null", () => {
   return withEnv({ ALLOWED_ORIGINS: "https://app.example.com", ALLOW_WILDCARD_CORS: undefined }, () => {
     assertEquals(getCorsHeaders(null), null);
+  });
+});
+
+// ─── SUFFIX MATCHING TESTS ─────────────────────────────────────────
+
+Deno.test("getCorsHeaders: origin matching ALLOWED_ORIGIN_SUFFIXES -> reflected", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOW_WILDCARD_CORS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovable.app,lovableproject.com",
+    ENV: undefined,
+  }, () => {
+    const headers = getCorsHeaders("https://id-preview--abc123.lovable.app");
+    assertExists(headers);
+    assertEquals(headers!["Access-Control-Allow-Origin"], "https://id-preview--abc123.lovable.app");
+    assertEquals(headers!["Vary"], "Origin");
+  });
+});
+
+Deno.test("getCorsHeaders: suffix match for lovableproject.com -> reflected", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOW_WILDCARD_CORS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovableproject.com",
+    ENV: undefined,
+  }, () => {
+    const headers = getCorsHeaders("https://my-preview.lovableproject.com");
+    assertExists(headers);
+    assertEquals(headers!["Access-Control-Allow-Origin"], "https://my-preview.lovableproject.com");
+  });
+});
+
+Deno.test("getCorsHeaders: evil.com does NOT match suffix -> null", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOW_WILDCARD_CORS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovable.app",
+    ENV: undefined,
+  }, () => {
+    assertEquals(getCorsHeaders("https://evil.com"), null);
+  });
+});
+
+Deno.test("getCorsHeaders: evil-lovable.app does NOT match suffix (no dot boundary) -> null", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOW_WILDCARD_CORS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovable.app",
+    ENV: undefined,
+  }, () => {
+    // "evil-lovable.app" does not end with ".lovable.app" and is not "lovable.app"
+    assertEquals(getCorsHeaders("https://evil-lovable.app"), null);
+  });
+});
+
+Deno.test("getCorsHeaders: ALLOW_WILDCARD_CORS=true + ENV=production -> null (denied)", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOW_WILDCARD_CORS: "true",
+    ALLOWED_ORIGIN_SUFFIXES: undefined,
+    ENV: "production",
+  }, () => {
+    assertEquals(getCorsHeaders("https://anything.com"), null);
+  });
+});
+
+Deno.test("getCorsHeaders: combined exact + suffix both work", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: "https://myapp.com",
+    ALLOW_WILDCARD_CORS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovable.app",
+    ENV: undefined,
+  }, () => {
+    // Exact match
+    const h1 = getCorsHeaders("https://myapp.com");
+    assertExists(h1);
+    assertEquals(h1!["Access-Control-Allow-Origin"], "https://myapp.com");
+    // Suffix match
+    const h2 = getCorsHeaders("https://preview--abc.lovable.app");
+    assertExists(h2);
+    assertEquals(h2!["Access-Control-Allow-Origin"], "https://preview--abc.lovable.app");
+    // Neither
+    assertEquals(getCorsHeaders("https://evil.com"), null);
+  });
+});
+
+Deno.test("parseOriginHostname: extracts hostname", () => {
+  assertEquals(parseOriginHostname("https://foo.lovable.app"), "foo.lovable.app");
+  assertEquals(parseOriginHostname("http://localhost:3000"), "localhost");
+  assertEquals(parseOriginHostname("invalid"), null);
+});
+
+Deno.test("isAllowedOrigin: suffix matching works", () => {
+  return withEnv({
+    ALLOWED_ORIGINS: undefined,
+    ALLOWED_ORIGIN_SUFFIXES: "lovable.app",
+  }, () => {
+    assertEquals(isAllowedOrigin("https://preview--abc.lovable.app"), true);
+    assertEquals(isAllowedOrigin("https://evil.com"), false);
   });
 });
 
