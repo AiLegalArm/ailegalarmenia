@@ -221,12 +221,30 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
   const extractCaseFields = async () => {
     try {
       toast.info(t('cases:extracting_fields', 'Extracting facts and legal question...'));
-      const { data, error } = await supabase.functions.invoke('extract-case-fields', {
-        body: { caseId }
+      
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180_000);
+      
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      const resp = await fetch(`${supabaseUrl}/functions/v1/extract-case-fields`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session?.access_token ?? supabaseKey}`,
+        },
+        body: JSON.stringify({ caseId }),
+        signal: controller.signal,
       });
-      if (error) {
-        const msg = getFunctionsInvokeErrorMessage(error);
-        throw new Error(msg);
+      clearTimeout(timeout);
+      
+      const data = await resp.json();
+      
+      if (!resp.ok) {
+        throw new Error(data?.error || data?.message || `HTTP ${resp.status}`);
       }
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ['cases'] });
@@ -239,7 +257,7 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
       }
     } catch (error) {
       console.error('Extract case fields error:', error);
-      const msg = error instanceof Error ? error.message : getFunctionsInvokeErrorMessage(error);
+      const msg = error instanceof Error ? error.message : String(error);
       const pretty = isNoDataForExtractionMessage(msg) ? t('cases:extraction_no_data') : msg;
       toast.error(pretty || t('cases:extraction_failed', 'Failed to extract case fields'));
     }
