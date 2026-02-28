@@ -73,13 +73,31 @@ export function useCases(filters: CaseFilters = {}) {
 
   const createCase = useMutation({
     mutationFn: async (newCase: CaseInsert) => {
-      const { data, error } = await supabase
-        .from('cases')
-        .insert(newCase)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      // Try insert; on duplicate case_number, auto-append suffix
+      let attempt = 0;
+      let caseToInsert = { ...newCase };
+      const maxAttempts = 10;
+
+      while (attempt < maxAttempts) {
+        const { data, error } = await supabase
+          .from('cases')
+          .insert(caseToInsert)
+          .select()
+          .single();
+
+        if (!error) return data;
+
+        if (error.message?.includes('cases_case_number_active_key') && attempt < maxAttempts - 1) {
+          attempt++;
+          caseToInsert = {
+            ...newCase,
+            case_number: `${newCase.case_number}-${attempt}`,
+          };
+          continue;
+        }
+
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cases'] });
@@ -89,10 +107,9 @@ export function useCases(filters: CaseFilters = {}) {
       });
     },
     onError: (error) => {
-      const isDuplicate = error.message?.includes('cases_case_number_active_key');
       toast({
-        title: isDuplicate ? t('case_number_duplicate') : t('errors:operation_failed'),
-        description: isDuplicate ? t('case_number_duplicate_desc') : error.message,
+        title: t('errors:operation_failed'),
+        description: error.message,
         variant: 'destructive',
       });
     },
