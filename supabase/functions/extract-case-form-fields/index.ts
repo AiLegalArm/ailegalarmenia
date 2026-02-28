@@ -62,88 +62,115 @@ CRITICAL RULES:
 - For scanned documents: read handwritten text carefully
 - NEVER fabricate or guess \u2014 only extract what is present`;
 
+interface FileRef {
+  bucket: string;
+  path: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors.errorResponse) return cors.errorResponse;
   const corsHeaders = cors.corsHeaders!;
 
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   try {
+    // --- Auth ---
     const authHeader = req.headers.get("Authorization") ?? "";
-    const sb = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    // User client for auth validation
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
     const token = authHeader.replace("Bearer ", "");
-    const { data, error: authError } = await sb.auth.getClaims(token);
-    if (authError || !data?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const { data: claimsData, error: authError } = await userClient.auth.getUser(token);
+    if (authError || !claimsData?.user) {
+      return json({ error: "Unauthorized" }, 401);
     }
+    const userId = claimsData.user.id;
 
-    const { files } = await req.json();
+    // Service client for Storage download (bypasses RLS)
+    const adminClient = createClient(supabaseUrl, serviceKey);
+
+    // --- Parse body ---
+    const { files } = await req.json() as { files?: FileRef[] };
     if (!files || !Array.isArray(files) || files.length === 0) {
-      return new Response(
-        JSON.stringify({ success: false, error: "No files provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return json({ success: false, error: "No files provided" }, 400);
     }
 
-    // Build multimodal content
+    // --- Download files from Storage and build multimodal content ---
     const userContent: Array<Record<string, unknown>> = [
-      { type: "text", text: "Extract case information from the following documents:" }
+      { type: "text", text: "Extract case information from the following documents:" },
     ];
 
-    for (const file of files.slice(0, 5)) {
-      const { name, mimeType, base64 } = file as { name: string; mimeType: string; base64: string };
-      
-      if (mimeType.startsWith("image/")) {
-        userContent.push({
-          type: "text",
-          text: `\nDocument: "${name}"`
-        });
-        userContent.push({
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${base64}` }
-        });
-      } else if (mimeType === "application/pdf") {
-        // For PDFs, include as text context if small
-        userContent.push({
-          type: "text",
-          text: `\nPDF document: "${name}" (analyze the content to extract case fields)`
-        });
-        userContent.push({
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${base64}` }
-        });
+    for (const fileRef of files.slice(0, 5)) {
+      // Security: verify the file path belongs to the requesting user
+      if (!fileRef.path.startsWith(`${userId}/`)) {
+        return json({ success: false, error: "Access denied to file: " + fileRef.name }, 403);
+      }
+
+      const { data: blob, error: dlError } = await adminClient.storage
+        .from(fileRef.bucket)
+        .download(fileRef.path);
+
+      if (dlError || !blob) {
+        console.error(`Download failed for ${fileRef.name}:`, dlError);
+        return json({ success: false, error: `Download failed: ${fileRef.name}` }, 400);
+      }
+
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+
+      if (fileRef.mime.startsWith("image/")) {
+        // Image → multimodal vision
+        const b64 = bytesToBase64(bytes);
+        userContent.push(
+          { type: "text", text: `\nDocument: "${fileRef.name}"` },
+          { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
+        );
+      } else if (fileRef.mime === "application/pdf") {
+        // PDF → send as image_url with data URI (GPT-5 supports PDF input)
+        const b64 = bytesToBase64(bytes);
+        userContent.push(
+          { type: "text", text: `\nPDF document: "${fileRef.name}"` },
+          { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
+        );
       } else {
-        // Text-based files
+        // Text-based files (DOCX, TXT etc.) — decode as text
         try {
-          const decoded = atob(base64);
+          const decoded = new TextDecoder().decode(bytes);
           userContent.push({
             type: "text",
-            text: `\nDocument "${name}":\n${decoded.slice(0, 10000)}`
+            text: `\nDocument "${fileRef.name}":\n${decoded.slice(0, 10000)}`,
           });
         } catch {
-          console.warn(`Could not decode file ${name}`);
+          console.warn(`Could not decode file ${fileRef.name}`);
         }
       }
     }
 
+    // --- Call AI ---
     const { callGatewayBypass } = await import("../_shared/gateway-bypass.ts");
 
     const result = await callGatewayBypass(
       [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userContent }
+        { role: "user", content: userContent },
       ],
       {
         functionName: "extract-case-fields",
         bypassReason: "multimodal",
         timeoutMs: 120000,
-      }
+      },
     );
 
     const aiData = result.data;
@@ -157,13 +184,10 @@ serve(async (req) => {
       extracted = JSON.parse(cleaned);
     } catch {
       console.error("Failed to parse AI response:", content.slice(0, 300));
-      return new Response(
-        JSON.stringify({ success: false, error: "AI response parsing failed" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return json({ success: false, error: "AI response parsing failed" }, 500);
     }
 
-    // Normalize court_name to match known courts
+    // Normalize court_name
     if (extracted.court_name) {
       const courtLower = extracted.court_name.toLowerCase();
       for (const [key, value] of Object.entries(COURTS_MAP)) {
@@ -186,19 +210,25 @@ serve(async (req) => {
       extracted.current_stage = "preliminary";
     }
 
-    return new Response(
-      JSON.stringify({ success: true, fields: extracted }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
+    return json({ success: true, fields: extracted });
   } catch (error) {
     console.error("Error in extract-case-form-fields:", error);
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error"
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
     );
   }
 });
+
+/** Convert Uint8Array to base64 string (Deno-compatible) */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 32768;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
