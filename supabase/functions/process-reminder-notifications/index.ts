@@ -37,12 +37,17 @@ const typeToKey: Record<string, keyof typeof templates.en> = {
 
 function formatTimeLeft(minutes: number, lang: string): string {
   if (minutes < 60) {
-    const labels = { hy: "\u0580\u0578\u057a\u0565", ru: "минут", en: "minutes" };
+    const labels = { hy: "\u0580\u0578\u057a\u0565", ru: "\u043c\u0438\u043d\u0443\u0442", en: "minutes" };
     return `${minutes} ${labels[lang as keyof typeof labels] || labels.en}`;
   }
-  const hours = Math.floor(minutes / 60);
-  const labels = { hy: "\u056a\u0561\u0574", ru: "часов", en: "hours" };
-  return `${hours} ${labels[lang as keyof typeof labels] || labels.en}`;
+  if (minutes < 1440) {
+    const hours = Math.floor(minutes / 60);
+    const labels = { hy: "\u056a\u0561\u0574", ru: "\u0447\u0430\u0441\u043e\u0432", en: "hours" };
+    return `${hours} ${labels[lang as keyof typeof labels] || labels.en}`;
+  }
+  const days = Math.floor(minutes / 1440);
+  const labels = { hy: "\u0585\u0580", ru: "\u0434\u043d\u0435\u0439", en: "days" };
+  return `${days} ${labels[lang as keyof typeof labels] || labels.en}`;
 }
 
 function formatDateTime(isoDate: string, lang: string): string {
@@ -123,7 +128,7 @@ serve(async (req) => {
         const prefs = profile.notification_preferences as { telegram?: boolean } | null;
         if (prefs && prefs.telegram === false) continue;
 
-        const lang = "ru";
+        const lang = "hy";
         const templateKey = typeToKey[reminder.reminder_type] || "other";
         const template = templates[lang][templateKey];
 
@@ -154,7 +159,7 @@ serve(async (req) => {
               user_id: reminder.user_id,
               reminder_id: reminder.id,
               title: reminder.title,
-              message: `${formatTimeLeft(minutesBefore, lang)} до события`,
+              message: `${formatTimeLeft(minutesBefore, lang)} \u056b\u0580\u0561\u0564\u0561\u0580\u0571\u0578\u0582\u0569\u0575\u0561\u0576\u056b\u0581 \u0561\u057c\u0561\u057b`,
               notification_type: "reminder",
             });
           } else {
