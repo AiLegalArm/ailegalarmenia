@@ -265,9 +265,30 @@ export function CaseForm({
         })
       );
 
-      const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
-        body: { files: filesData }
+      // Use direct fetch with longer timeout instead of supabase.functions.invoke
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const session = (await supabase.auth.getSession()).data.session;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/extract-case-form-fields`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({ files: filesData }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const error = null;
 
       if (error) throw error;
       if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
