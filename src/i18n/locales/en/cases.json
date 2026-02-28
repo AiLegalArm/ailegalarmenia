@@ -265,5 +265,10 @@
   "party_role_criminal_defendant": "Defendant / Accused",
   "party_role_defense": "Defense",
   "party_role_prosecutor": "Prosecution",
-  "party_role_victim": "Victim"
+  "party_role_victim": "Victim",
+  "auto_fill_from_files": "Auto-fill from files",
+  "auto_filling": "Analyzing files...",
+  "auto_fill_success": "Fields filled automatically",
+  "auto_fill_failed": "Auto-fill failed",
+  "add_files_first": "Upload files first"
 }

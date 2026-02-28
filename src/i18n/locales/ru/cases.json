@@ -306,5 +306,10 @@
   "party_role_criminal_defendant": "Подсудимый / Обвиняемый",
   "party_role_defense": "Защита",
   "party_role_prosecutor": "Обвинение",
-  "party_role_victim": "Потерпевший"
+  "party_role_victim": "Потерпевший",
+  "auto_fill_from_files": "Автозаполнение из файлов",
+  "auto_filling": "Анализ файлов...",
+  "auto_fill_success": "Поля заполнены автоматически",
+  "auto_fill_failed": "Ошибка автозаполнения",
+  "add_files_first": "Сначала загрузите файлы"
 }
