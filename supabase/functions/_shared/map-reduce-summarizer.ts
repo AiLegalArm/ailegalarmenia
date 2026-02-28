@@ -89,14 +89,20 @@ async function summarizeChunk(
   chunkIndex: number,
   totalChunks: number
 ): Promise<string> {
-  const result = await callText("map-reduce-summarize", [
-    { role: "system", content: MAP_SYSTEM },
-    {
-      role: "user",
-      content: `[Fragment ${chunkIndex + 1}/${totalChunks}]\n\n${chunkText}`,
-    },
-  ]);
-  return result.text.substring(0, MAX_SUMMARY_PER_CHUNK);
+  try {
+    const result = await callText("map-reduce-summarize", [
+      { role: "system", content: MAP_SYSTEM },
+      {
+        role: "user",
+        content: `[Fragment ${chunkIndex + 1}/${totalChunks}]\n\n${chunkText}`,
+      },
+    ]);
+    return result.text.substring(0, MAX_SUMMARY_PER_CHUNK);
+  } catch (err) {
+    console.error(`[map-reduce] Chunk ${chunkIndex + 1}/${totalChunks} failed:`, (err as Error).message);
+    // Return a fallback: first 1500 chars of the original chunk
+    return `[Summary failed for fragment ${chunkIndex + 1}]\n${chunkText.substring(0, 1500)}`;
+  }
 }
 
 /**
