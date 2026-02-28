@@ -337,7 +337,7 @@ serve(async (req) => {
       {
       functionName: "extract-case-fields",
         bypassReason: "tool_calling",
-        timeoutMs: 180000,
+        timeoutMs: 300_000,
         maxRetries: 1,
         extraBody: {
           tools: [

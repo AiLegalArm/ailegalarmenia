@@ -90,7 +90,7 @@ export function CaseFactsEditor({
     setIsExtracting(true);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180_000);
+      const timeout = setTimeout(() => controller.abort(), 300_000);
       
       const session = (await supabase.auth.getSession()).data.session;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
