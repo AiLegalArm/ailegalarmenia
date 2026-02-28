@@ -589,7 +589,25 @@ async function fetchWithRetry(
       throw new Error(`AI Gateway error ${response.status}: ${errText.substring(0, 200)}`);
     }
 
-    const data = (await response.json()) as Record<string, unknown>;
+    // Safely parse response body — guard against empty/truncated responses
+    const responseText = await response.text();
+    if (!responseText || responseText.trim().length === 0) {
+      throw new Error(`AI Gateway returned empty response body (status ${response.status})`);
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(responseText) as Record<string, unknown>;
+    } catch (parseErr) {
+      console.error(
+        JSON.stringify({
+          request_id: requestId,
+          function_name: functionName,
+          error: "JSON parse failed",
+          body_preview: responseText.substring(0, 200),
+        })
+      );
+      throw new Error(`AI Gateway returned invalid JSON: ${(parseErr as Error).message}`);
+    }
 
     // Log token usage
     const usage = data.usage as

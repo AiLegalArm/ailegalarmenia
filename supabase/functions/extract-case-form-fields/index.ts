@@ -230,10 +230,29 @@ serve(async (req) => {
 
     let extracted: Record<string, string> = {};
     try {
-      const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-      extracted = JSON.parse(cleaned);
+      let cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      // Find JSON boundaries
+      const jsonStart = cleaned.indexOf("{");
+      const jsonEnd = cleaned.lastIndexOf("}");
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+      }
+      try {
+        extracted = JSON.parse(cleaned);
+      } catch {
+        // Attempt to repair truncated JSON by closing unbalanced braces
+        let braces = 0;
+        for (const ch of cleaned) {
+          if (ch === "{") braces++;
+          if (ch === "}") braces--;
+        }
+        let repaired = cleaned;
+        while (braces > 0) { repaired += "}"; braces--; }
+        extracted = JSON.parse(repaired);
+        console.log("[extract] Repaired truncated JSON successfully");
+      }
     } catch {
-      console.error("Failed to parse AI response:", content.slice(0, 300));
+      console.error("Failed to parse AI response:", content.slice(0, 500));
       return json({ success: false, error: "AI response parsing failed" }, 500);
     }
 
