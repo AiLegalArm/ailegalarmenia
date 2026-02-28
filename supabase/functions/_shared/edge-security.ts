@@ -78,16 +78,18 @@ function getAllowedOrigins(): string[] {
     .filter(Boolean);
 }
 
+/** Built-in suffixes for known Lovable infrastructure domains */
+const BUILTIN_SUFFIXES = ["lovable.app", "lovableproject.com", "lovable.dev"];
+
 function getAllowedOriginSuffixes(): string[] {
   const raw = Deno.env.get("ALLOWED_ORIGIN_SUFFIXES") || "";
-  console.log("[CORS_DEBUG] ALLOWED_ORIGIN_SUFFIXES raw:", JSON.stringify(raw));
-  if (!raw.trim()) return [];
-  const result = raw
+  const custom = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  console.log("[CORS_DEBUG] parsed suffixes:", JSON.stringify(result));
-  return result;
+  // Merge built-in + custom, deduplicate
+  const all = [...new Set([...BUILTIN_SUFFIXES, ...custom])];
+  return all;
 }
 
 function isWildcardAllowed(): boolean {
