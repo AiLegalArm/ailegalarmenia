@@ -313,5 +313,9 @@
   "auto_filling": "Анализ файлов...",
   "auto_fill_success": "Поля заполнены автоматически",
   "auto_fill_failed": "Ошибка автозаполнения",
-  "add_files_first": "Сначала загрузите файлы"
+  "add_files_first": "Сначала загрузите файлы",
+  "uploading_files": "Загрузка файлов...",
+  "analyzing_documents": "Анализ документов...",
+  "extracting_fields": "Извлечение данных...",
+  "auto_fill_complete": "Готово!"
 }

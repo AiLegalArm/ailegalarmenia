@@ -147,6 +147,8 @@ export function CaseForm({
   const [isAutoFilling, setIsAutoFilling] = useState(false);
   const [extractedFacts, setExtractedFacts] = useState<string | null>(null);
   const [extractedLegalQuestion, setExtractedLegalQuestion] = useState<string | null>(null);
+  const [autoFillProgress, setAutoFillProgress] = useState(0);
+  const [autoFillStage, setAutoFillStage] = useState('');
 
   const caseFormSchema = z.object({
     case_number: z.string().min(1, 'Required'),
@@ -244,6 +246,27 @@ export function CaseForm({
       return;
     }
     setIsAutoFilling(true);
+    setAutoFillProgress(0);
+    setAutoFillStage(t('uploading_files'));
+
+    // Simulated progress intervals
+    const progressStages = [
+      { at: 500, progress: 10, stage: t('uploading_files') },
+      { at: 2000, progress: 25, stage: t('uploading_files') },
+      { at: 4000, progress: 40, stage: t('analyzing_documents') },
+      { at: 8000, progress: 55, stage: t('analyzing_documents') },
+      { at: 15000, progress: 65, stage: t('extracting_fields') },
+      { at: 25000, progress: 75, stage: t('extracting_fields') },
+      { at: 40000, progress: 82, stage: t('extracting_fields') },
+      { at: 60000, progress: 88, stage: t('extracting_fields') },
+      { at: 90000, progress: 92, stage: t('extracting_fields') },
+    ];
+    const timers = progressStages.map(({ at, progress, stage }) =>
+      setTimeout(() => {
+        setAutoFillProgress(progress);
+        setAutoFillStage(stage);
+      }, at)
+    );
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
@@ -321,6 +344,8 @@ export function CaseForm({
       if (f.facts) setExtractedFacts(f.facts);
       if (f.legal_question) setExtractedLegalQuestion(f.legal_question);
 
+      setAutoFillProgress(100);
+      setAutoFillStage(t('auto_fill_complete'));
       toast({ title: t('auto_fill_success') });
     } catch (err) {
       console.error('Auto-fill error:', err);
@@ -330,7 +355,12 @@ export function CaseForm({
         variant: 'destructive',
       });
     } finally {
+      timers.forEach(clearTimeout);
       setIsAutoFilling(false);
+      setTimeout(() => {
+        setAutoFillProgress(0);
+        setAutoFillStage('');
+      }, 2000);
     }
   }, [pendingFiles, form, t, toast]);
 
@@ -664,20 +694,35 @@ export function CaseForm({
                   onFilesChange={setPendingFiles} 
                 />
                 {pendingFiles.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAutoFill}
-                    disabled={isAutoFilling}
-                    className="w-full"
-                  >
-                    {isAutoFilling ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="mr-2 h-4 w-4" />
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAutoFill}
+                      disabled={isAutoFilling}
+                      className="w-full"
+                    >
+                      {isAutoFilling ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Wand2 className="mr-2 h-4 w-4" />
+                      )}
+                      {isAutoFilling ? t('auto_filling') : t('auto_fill_from_files')}
+                    </Button>
+                    {(isAutoFilling || autoFillProgress > 0) && (
+                      <div className="space-y-1">
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+                            style={{ width: `${autoFillProgress}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground text-center">
+                          {autoFillStage} {autoFillProgress > 0 && `(${autoFillProgress}%)`}
+                        </p>
+                      </div>
                     )}
-                    {isAutoFilling ? t('auto_filling') : t('auto_fill_from_files')}
-                  </Button>
+                  </div>
                 )}
               </div>
             )}

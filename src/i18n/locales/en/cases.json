@@ -272,5 +272,9 @@
   "auto_filling": "Analyzing files...",
   "auto_fill_success": "Fields filled automatically",
   "auto_fill_failed": "Auto-fill failed",
-  "add_files_first": "Upload files first"
+  "add_files_first": "Upload files first",
+  "uploading_files": "Uploading files...",
+  "analyzing_documents": "Analyzing documents...",
+  "extracting_fields": "Extracting fields...",
+  "auto_fill_complete": "Complete!"
 }
