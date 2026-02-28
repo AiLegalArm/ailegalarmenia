@@ -128,7 +128,15 @@ serve(async (req) => {
     if (ocrResults && ocrResults.length > 0) {
       context += "\n\n=== OCR EXTRACTED TEXT ===";
       ocrResults.forEach((ocr, idx) => {
-        context += `\n\n[Document ${idx + 1}]:\n${(ocr.extracted_text || "").substring(0, 8000)}`;
+        const text = (ocr.extracted_text || "").substring(0, 8000);
+        // Skip garbled OCR: if >20% of chars are '?' or replacement chars, it's corrupted
+        const questionMarks = (text.match(/\?/g) || []).length;
+        const ratio = text.length > 0 ? questionMarks / text.length : 1;
+        if (ratio > 0.15) {
+          console.warn(`Skipping garbled OCR document ${idx + 1}: ${Math.round(ratio * 100)}% question marks`);
+          return;
+        }
+        context += `\n\n[Document ${idx + 1}]:\n${text}`;
       });
     }
 
