@@ -80,11 +80,14 @@ function getAllowedOrigins(): string[] {
 
 function getAllowedOriginSuffixes(): string[] {
   const raw = Deno.env.get("ALLOWED_ORIGIN_SUFFIXES") || "";
+  console.log("[CORS_DEBUG] ALLOWED_ORIGIN_SUFFIXES raw:", JSON.stringify(raw));
   if (!raw.trim()) return [];
-  return raw
+  const result = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  console.log("[CORS_DEBUG] parsed suffixes:", JSON.stringify(result));
+  return result;
 }
 
 function isWildcardAllowed(): boolean {
