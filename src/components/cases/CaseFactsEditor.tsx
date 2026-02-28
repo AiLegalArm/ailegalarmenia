@@ -130,14 +130,16 @@ export function CaseFactsEditor({
 
   return (
     <Card className="mt-4">
-      <CardHeader className="flex flex-col items-center gap-3">
-        <CardTitle className="w-full min-w-0 break-normal leading-tight text-center">
+      <CardHeader>
+        <CardTitle className="w-full min-w-0 break-normal leading-tight">
           {t('cases:facts_and_question', 'Facts & Legal Question')}
         </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
         <div className="flex flex-wrap justify-center gap-2">
           {!isEditingFields ? (
             <>
-              <Button variant="outline" size="sm" onClick={handleStartEditFields} className="w-full">
+              <Button variant="outline" size="sm" onClick={handleStartEditFields}>
                 <Pencil className="mr-2 h-4 w-4" />
                 {t('cases:edit_fields', 'Edit')}
               </Button>
@@ -146,7 +148,6 @@ export function CaseFactsEditor({
                 size="sm"
                 onClick={handleExtractFields}
                 disabled={isExtracting}
-                className="w-full"
               >
                 {isExtracting ? (
                   <>
@@ -168,12 +169,11 @@ export function CaseFactsEditor({
                 size="sm"
                 onClick={handleCancelEditFields}
                 disabled={isSavingFields}
-                className="w-full"
               >
                 <X className="mr-2 h-4 w-4" />
                 {t('cases:cancel_edit', 'Cancel')}
               </Button>
-              <Button size="sm" onClick={handleSaveFields} disabled={isSavingFields} className="w-full">
+              <Button size="sm" onClick={handleSaveFields} disabled={isSavingFields}>
                 {isSavingFields ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -184,8 +184,6 @@ export function CaseFactsEditor({
             </>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
         {aiCreditsExhausted && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
