@@ -78,11 +78,11 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Strict JSON (Gemini Pro) ──────────────────────────────────────────────
   "extract-case-fields": {
-    model: "google/gemini-2.5-pro",
+    model: "openai/gpt-5",
     temperature: 0.2,
     max_tokens: 16000,
     json_mode: true,
-    description: "Extract fields JSON (Gemini Pro)",
+    description: "Extract fields (GPT-5)",
   },
   "kb-search-assistant": {
     model: "google/gemini-2.5-pro",
@@ -232,6 +232,7 @@ const OPENAI_CHAT_ALLOWLIST = new Set([
   "legal-chat",
   "analyze-files-for-complaint",
   "generate-document",
+  "extract-case-fields",
   "ai-analyze",
   "ai-analyze:strategy_builder",
   "ai-analyze:risk_factors",
@@ -257,7 +258,6 @@ const STRICT_JSON_ROLES = new Set([
 
 /** Functions that use callJSON with Gemini Pro (tool_calling or schema extraction) */
 const STRICT_JSON_FUNCTIONS = new Set([
-  "extract-case-fields",
   "kb-search-assistant",
 ]);
 
@@ -378,9 +378,10 @@ const LEGAL_REASONING_FNS = new Set([
   "generate-complaint",
   "analyze-files-for-complaint",
   "generate-document",
+  "extract-case-fields",
 ]);
 
-const JSON_FNS = new Set(["extract-case-fields", "kb-search-assistant"]);
+const JSON_FNS = new Set(["kb-search-assistant"]);
 
 export const LEGAL_SAFETY_HEADER = `RULES:
 - Do not invent laws, articles, case numbers, or quotations.
