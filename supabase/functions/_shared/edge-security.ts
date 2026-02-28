@@ -88,16 +88,18 @@ function isWildcardAllowed(): boolean {
  * - If wildcard explicitly allowed → "*".
  */
 export function getCorsHeaders(requestOrigin?: string | null): Record<string, string> | null {
+  // Wildcard mode takes top priority — allow any origin
+  if (isWildcardAllowed()) {
+    return {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": DEFAULT_ALLOWED_HEADERS,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+    };
+  }
+
   const allowed = getAllowedOrigins();
 
   if (allowed.length === 0) {
-    if (isWildcardAllowed()) {
-      return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": DEFAULT_ALLOWED_HEADERS,
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-      };
-    }
     return null;
   }
 
