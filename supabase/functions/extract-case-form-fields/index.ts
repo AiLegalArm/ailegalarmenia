@@ -142,7 +142,7 @@ serve(async (req) => {
       {
         functionName: "extract-case-fields",
         bypassReason: "multimodal",
-        timeoutMs: 45000,
+        timeoutMs: 120000,
       }
     );
 
