@@ -89,12 +89,29 @@ export function CaseFactsEditor({
   const handleExtractFields = async () => {
     setIsExtracting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('extract-case-fields', {
-        body: { caseId }
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180_000);
       
-      if (error) {
-        const parsedMsg = getFunctionsInvokeErrorMessage(error);
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      const resp = await fetch(`${supabaseUrl}/functions/v1/extract-case-fields`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session?.access_token ?? supabaseKey}`,
+        },
+        body: JSON.stringify({ caseId }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      
+      const data = await resp.json();
+      
+      if (!resp.ok) {
+        const parsedMsg = data?.error || data?.message || `HTTP ${resp.status}`;
         if (parsedMsg.includes('402') || parsedMsg.includes('Payment required') || parsedMsg.includes('credits')) {
           onCreditsExhausted();
           toast({ title: t('cases:ai_credits_exhausted'), variant: 'destructive' });
@@ -119,7 +136,7 @@ export function CaseFactsEditor({
       }
     } catch (error) {
       console.error('Extraction error:', error);
-      const rawMsg = error instanceof Error ? error.message : getFunctionsInvokeErrorMessage(error);
+      const rawMsg = error instanceof Error ? error.message : String(error);
       const errorMsg = isNoDataForExtractionMessage(rawMsg) ? t('cases:extraction_no_data') : rawMsg;
       
       if (rawMsg.includes('402') || rawMsg.includes('credits')) {
@@ -130,7 +147,7 @@ export function CaseFactsEditor({
       
       toast({
         title: t('errors:operation_failed', 'Operation failed'),
-        description: errorMsg,
+        description: rawMsg.includes('abort') ? t('errors:timeout', 'Request timed out. Please try again.') : errorMsg,
         variant: 'destructive',
       });
     } finally {
