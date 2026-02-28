@@ -479,6 +479,7 @@ const CaseDetail = () => {
             case_number: caseData.case_number,
             case_type: caseData.case_type,
             court: caseData.court,
+            court_date: caseData.court_date,
             facts: caseData.facts,
             description: caseData.description,
             notes: caseData.notes,
