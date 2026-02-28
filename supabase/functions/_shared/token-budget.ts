@@ -64,10 +64,10 @@ export const BUDGET_PROFILES: Record<string, TokenBudgetConfig> = {
     conversationHistory: 6000,
     systemPrompt: 4000,
   },
-  /** For ai-analyze: heavy RAG, large facts — supports up to ~100k total input */
+  /** For ai-analyze: heavy RAG, large facts — supports up to 110k tokens per file */
   analyze: {
-    userFacts: 30000,
-    ocrText: 30000,
+    userFacts: 110000,
+    ocrText: 110000,
     ragLegislation: 15000,
     ragPractice: 15000,
     conversationHistory: 0,
