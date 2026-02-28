@@ -346,8 +346,14 @@ export function CaseForm({
       if (f.current_stage && ['pretrial', 'preliminary', 'first_instance', 'appeal', 'cassation', 'enforcement', 'echr'].includes(f.current_stage)) {
         form.setValue('current_stage', f.current_stage === 'pretrial' ? 'preliminary' : f.current_stage);
       }
-      if (f.facts) form.setValue('facts', f.facts);
-      if (f.legal_question) form.setValue('legal_question', f.legal_question);
+      if (f.facts) {
+        const factsValue = Array.isArray(f.facts) ? f.facts.join('\n') : String(f.facts);
+        form.setValue('facts', factsValue);
+      }
+      if (f.legal_question) {
+        const lqValue = Array.isArray(f.legal_question) ? f.legal_question.join('\n') : String(f.legal_question);
+        form.setValue('legal_question', lqValue);
+      }
 
       setAutoFillProgress(100);
       setAutoFillStage(t('auto_fill_complete'));
