@@ -33,6 +33,7 @@ interface CaseComplaintGeneratorProps {
     case_number?: string;
     case_type?: string | null;
     court?: string | null;
+    court_date?: string | null;
     facts?: string | null;
     description?: string | null;
     notes?: string | null;
@@ -284,6 +285,7 @@ export function CaseComplaintGenerator({
           complaintType: complaintTypeId,
           extractedText: combinedText.slice(0, 80000),
           language: lang === "hy" ? "hy" : lang === "ru" ? "ru" : "en",
+          referenceDate: caseData.court_date || new Date().toISOString().split("T")[0],
         };
       const currentRefsText = getReferencesText(caseId);
       if (currentRefsText?.trim()) {
