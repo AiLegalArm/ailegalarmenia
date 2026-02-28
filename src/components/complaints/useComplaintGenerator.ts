@@ -78,7 +78,8 @@ export function useComplaintGenerator({
         category,
         complaintType: getComplaintTypeLabel(complaintType, lang),
         extractedText,
-        language: lang === "hy" ? "hy" : lang === "ru" ? "ru" : "en"
+        language: lang === "hy" ? "hy" : lang === "ru" ? "ru" : "en",
+        referenceDate: new Date().toISOString().split("T")[0]
       };
       if (referencesText?.trim()) {
         requestBody.referencesText = referencesText;
