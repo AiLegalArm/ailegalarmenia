@@ -260,7 +260,7 @@ export function CaseAIAnalysisPanel({
         <CardHeader className="p-4 sm:p-6">
           <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <span className="text-base sm:text-lg">{t('ai:analyze')}</span>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={onOpenComplaintGenerator} className="h-10 rounded-xl text-mobile-sm sm:text-sm">
                 <FileSignature className="mr-2 h-4 w-4 shrink-0" />
                 <span className="truncate">
