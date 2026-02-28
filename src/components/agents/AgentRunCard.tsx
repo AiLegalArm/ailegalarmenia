@@ -1,12 +1,73 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Play, ChevronDown, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { stripMarkdown } from "@/lib/strip-markdown";
 import type { AgentConfig, AgentAnalysisRun, AgentFinding } from "./types";
+
+
+const JSON_DISPLAY_KEYS = [
+  "executiveSummary", "executive_summary",
+  "evidenceSummary", "evidence_summary",
+  "violationsSummary", "violations_summary",
+  "defenseStrategy", "defense_strategy",
+  "prosecutionWeaknesses", "prosecution_weaknesses",
+  "recommendations",
+  "title",
+];
+
+function tryParseAnalysisJson(text: string): Record<string, string> | null {
+  try {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{")) return null;
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    // Check if it has at least one known key
+    if (JSON_DISPLAY_KEYS.some((k) => k in parsed)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function AnalysisResultBlock({ text, label }: { text: string; label: string }) {
+  const parsed = useMemo(() => tryParseAnalysisJson(text), [text]);
+
+  if (parsed) {
+    // Render structured sections from JSON
+    const sections = JSON_DISPLAY_KEYS
+      .filter((k) => parsed[k] && typeof parsed[k] === "string")
+      .map((k) => ({ key: k, value: parsed[k] as string }));
+
+    return (
+      <div className="w-full overflow-hidden">
+        <h4 className="text-sm font-medium mb-2">{label}</h4>
+        <div className="max-h-[300px] overflow-y-auto border rounded-lg p-3 w-full space-y-3">
+          {sections.map(({ key, value }) => (
+            <div key={key}>
+              <h5 className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                {key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").trim()}
+              </h5>
+              <p className="text-sm whitespace-pre-wrap break-words">{stripMarkdown(value)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full overflow-hidden">
+      <h4 className="text-sm font-medium mb-2">{label}</h4>
+      <div className="max-h-[300px] overflow-y-auto border rounded-lg p-3 w-full">
+        <p className="text-sm whitespace-pre-wrap break-words">{stripMarkdown(text)}</p>
+      </div>
+    </div>
+  );
+}
 
 interface AgentRunCardProps {
   agent: AgentConfig;
@@ -184,14 +245,7 @@ export function AgentRunCard({ agent, run, isRunning, onRun, disabled }: AgentRu
                 
                 {/* Full Analysis */}
                 {run.analysis_result && (
-                  <div className="w-full overflow-hidden">
-                    <h4 className="text-sm font-medium mb-2">{t("ai:full_analysis")}</h4>
-                    <div className="max-h-[200px] overflow-y-auto border rounded-lg p-3 w-full">
-                      <div className="text-sm leading-relaxed break-words whitespace-normal overflow-wrap-anywhere word-break-break-word">
-                        <ReactMarkdown>{run.analysis_result}</ReactMarkdown>
-                      </div>
-                    </div>
-                  </div>
+                  <AnalysisResultBlock text={run.analysis_result} label={t("ai:full_analysis")} />
                 )}
                 
                 {/* Metadata */}
