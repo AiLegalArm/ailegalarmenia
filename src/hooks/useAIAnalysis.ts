@@ -90,7 +90,7 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
 
       // Use raw fetch with extended timeout (150s) to avoid browser aborting long AI calls
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 200_000);
+      const timeoutId = setTimeout(() => controller.abort(), 310_000);
 
       const session = (await supabase.auth.getSession()).data.session;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -221,7 +221,7 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
         };
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 200_000);
+        const timeoutId = setTimeout(() => controller.abort(), 310_000);
         const session = (await supabase.auth.getSession()).data.session;
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;

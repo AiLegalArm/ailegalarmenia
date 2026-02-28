@@ -64,14 +64,14 @@ export const BUDGET_PROFILES: Record<string, TokenBudgetConfig> = {
     conversationHistory: 6000,
     systemPrompt: 4000,
   },
-  /** For ai-analyze: heavy RAG, large facts */
+  /** For ai-analyze: heavy RAG, large facts — supports up to ~100k total input */
   analyze: {
-    userFacts: 4000,
-    ocrText: 6000,
-    ragLegislation: 6000,
-    ragPractice: 5000,
+    userFacts: 30000,
+    ocrText: 30000,
+    ragLegislation: 15000,
+    ragPractice: 15000,
     conversationHistory: 0,
-    systemPrompt: 5000,
+    systemPrompt: 10000,
   },
   /** For generate-document: moderate everything */
   document: {
