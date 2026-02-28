@@ -146,6 +146,11 @@ serve(async (req) => {
     const textParts: string[] = [];
     const visionParts: Array<Record<string, unknown>> = [];
 
+    // Limits to prevent payload overflow
+    const MAX_VISION_FILE_SIZE = 4 * 1024 * 1024; // 4MB per file for vision
+    const MAX_TOTAL_VISION_SIZE = 10 * 1024 * 1024; // 10MB total vision
+    let totalVisionSize = 0;
+
     for (const fileRef of files.slice(0, 5)) {
       // Security: verify the file path belongs to the requesting user
       if (!fileRef.path.startsWith(`${userId}/`)) {
@@ -158,34 +163,54 @@ serve(async (req) => {
 
       if (dlError || !blob) {
         console.error(`Download failed for ${fileRef.name}:`, dlError);
-        return json({ success: false, error: `Download failed: ${fileRef.name}` }, 400);
+        continue; // Skip failed files instead of failing entirely
       }
 
       const bytes = new Uint8Array(await blob.arrayBuffer());
+      const fileSizeBytes = bytes.length;
 
       if (fileRef.mime.startsWith("image/")) {
-        // Image → multimodal vision
-        const b64 = bytesToBase64(bytes);
-        visionParts.push(
-          { type: "text", text: `[Изображение: "${fileRef.name}"]` },
-          { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
-        );
+        if (fileSizeBytes <= MAX_VISION_FILE_SIZE && totalVisionSize + fileSizeBytes <= MAX_TOTAL_VISION_SIZE) {
+          const b64 = bytesToBase64(bytes);
+          visionParts.push(
+            { type: "text", text: `[\u0546\u056F\u0561\u0580: "${fileRef.name}"]` },
+            { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
+          );
+          totalVisionSize += fileSizeBytes;
+        } else {
+          console.warn(`[extract] Image ${fileRef.name} too large (${(fileSizeBytes / 1024 / 1024).toFixed(1)}MB), skipped`);
+        }
       } else if (fileRef.mime === "application/pdf") {
-        // PDF → send as image_url with data URI (GPT-5 supports PDF input)
-        const b64 = bytesToBase64(bytes);
-        visionParts.push(
-          { type: "text", text: `[PDF: "${fileRef.name}"]` },
-          { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
-        );
+        if (fileSizeBytes <= MAX_VISION_FILE_SIZE && totalVisionSize + fileSizeBytes <= MAX_TOTAL_VISION_SIZE) {
+          const b64 = bytesToBase64(bytes);
+          visionParts.push(
+            { type: "text", text: `[PDF: "${fileRef.name}"]` },
+            { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
+          );
+          totalVisionSize += fileSizeBytes;
+        } else {
+          // Large PDF → extract raw text as fallback
+          console.log(`[extract] PDF ${fileRef.name} too large for vision (${(fileSizeBytes / 1024 / 1024).toFixed(1)}MB), extracting text`);
+          const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+          const textContent = extractTextFromPdfBinary(decoded, fileRef.name);
+          if (textContent.length > 100) {
+            textParts.push(textContent);
+          } else {
+            console.warn(`[extract] Could not extract text from large PDF ${fileRef.name}`);
+          }
+        }
       } else {
-        // Text-based files (DOCX, TXT etc.) — decode as text
         try {
-          const decoded = new TextDecoder().decode(bytes);
+          const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
           textParts.push(`--- \u0556\u0561\u0575\u056C: "${fileRef.name}" ---\n${decoded}`);
         } catch {
           console.warn(`Could not decode file ${fileRef.name}`);
         }
       }
+    }
+
+    if (textParts.length === 0 && visionParts.length === 0) {
+      return json({ success: false, error: "Could not extract content from any files" }, 400);
     }
 
     // Build user prompt — apply map-reduce if text is too large
@@ -219,7 +244,7 @@ serve(async (req) => {
       {
         functionName: "extract-case-fields",
         bypassReason: "multimodal",
-        timeoutMs: 120000,
+        timeoutMs: 180000,
       },
     );
 
@@ -307,4 +332,57 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
   return btoa(binary);
+}
+
+/**
+ * Extract readable text from raw PDF binary content.
+ * PDF text is stored in various operators (Tj, TJ, ' , ").
+ * This is a best-effort extraction for large PDFs that can't be sent via vision.
+ */
+function extractTextFromPdfBinary(raw: string, fileName: string): string {
+  const textFragments: string[] = [];
+  
+  // Extract text between BT...ET blocks (text objects)
+  const btEtRegex = /BT\s([\s\S]*?)ET/g;
+  let match;
+  while ((match = btEtRegex.exec(raw)) !== null) {
+    const block = match[1];
+    // Extract Tj operator: (text) Tj
+    const tjRegex = /\(([^)]*)\)\s*Tj/g;
+    let tjMatch;
+    while ((tjMatch = tjRegex.exec(block)) !== null) {
+      const text = tjMatch[1]
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "")
+        .replace(/\\\(/g, "(")
+        .replace(/\\\)/g, ")")
+        .replace(/\\\\/g, "\\");
+      if (text.trim()) textFragments.push(text.trim());
+    }
+    // Extract TJ operator: [(text) ...] TJ
+    const tjArrayRegex = /\[([^\]]*)\]\s*TJ/g;
+    let tjArrMatch;
+    while ((tjArrMatch = tjArrayRegex.exec(block)) !== null) {
+      const innerRegex = /\(([^)]*)\)/g;
+      let innerMatch;
+      const parts: string[] = [];
+      while ((innerMatch = innerRegex.exec(tjArrMatch[1])) !== null) {
+        parts.push(innerMatch[1]);
+      }
+      const combined = parts.join("")
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "")
+        .replace(/\\\(/g, "(")
+        .replace(/\\\)/g, ")")
+        .replace(/\\\\/g, "\\");
+      if (combined.trim()) textFragments.push(combined.trim());
+    }
+  }
+
+  const result = textFragments.join(" ").replace(/\s+/g, " ").trim();
+  console.log(`[extract] Extracted ${result.length} chars from PDF binary: ${fileName}`);
+  
+  // Cap at 100K chars to prevent excessive text
+  const capped = result.length > 100000 ? result.substring(0, 100000) : result;
+  return capped.length > 0 ? `--- PDF: "${fileName}" ---\n${capped}` : "";
 }
