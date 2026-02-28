@@ -243,32 +243,30 @@ export function CaseForm({
     }
     setIsAutoFilling(true);
     try {
-      // Upload files to temp storage, then pass paths to edge function
-      const uploadedFiles: Array<{ name: string; mimeType: string; storagePath: string }> = [];
-      const tempPrefix = `temp-autofill/${crypto.randomUUID()}`;
-
-      for (const file of pendingFiles.slice(0, 5)) {
-        const storagePath = `${tempPrefix}/${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('case-files')
-          .upload(storagePath, file, { upsert: true });
-        if (uploadError) {
-          console.warn(`Failed to upload ${file.name}:`, uploadError.message);
-          continue;
-        }
-        uploadedFiles.push({
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          storagePath,
-        });
-      }
-
-      if (uploadedFiles.length === 0) {
-        throw new Error('Failed to upload files for analysis');
-      }
+      // Read files as base64 using safe chunked encoding
+      const filesData = await Promise.all(
+        pendingFiles.slice(0, 5).map(async (file) => {
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          // Safe base64 encoding without stack overflow
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+            for (let j = 0; j < chunk.length; j++) {
+              binary += String.fromCharCode(chunk[j]);
+            }
+          }
+          return {
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64: btoa(binary),
+          };
+        })
+      );
 
       const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
-        body: { storagePaths: uploadedFiles }
+        body: { files: filesData }
       });
 
       if (error) throw error;
