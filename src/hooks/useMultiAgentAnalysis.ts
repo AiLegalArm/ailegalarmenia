@@ -185,7 +185,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
         throw createError;
       }
       
-      // Call the edge function
+      // Call the edge function with extended timeout (raw fetch)
       const requestBody: Record<string, unknown> = {
         caseId,
         agentType,
@@ -195,22 +195,47 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
         requestBody.referencesText = referencesText;
       }
 
-      const { data, error } = await supabase.functions.invoke("multi-agent-analyze", {
-        body: requestBody
-      });
-      
-      if (error) {
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+      // deno-lint-ignore no-explicit-any
+      let data: any;
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/multi-agent-analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        data = await response.json();
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
         // Update run with error
         await supabase
           .from("agent_analysis_runs")
           .update({
             status: "failed",
-            error_message: error.message,
+            error_message: fetchErr instanceof Error ? fetchErr.message : "Request failed",
             completed_at: new Date().toISOString()
           })
           .eq("id", run.id);
         
-        throw error;
+        throw fetchErr;
       }
       
       // Update run with results
@@ -303,17 +328,21 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     ];
     
     setIsLoading(true);
+    let allSucceeded = true;
     
     try {
       for (const agentType of agentOrder) {
         const result = await runAgent(caseId, agentType, referencesText);
         if (!result) {
+          allSucceeded = false;
           toast.error(`${t("ai:analysis_failed")}: ${agentType}`);
           break;
         }
       }
       
-      toast.success(t("ai:all_agents_complete"));
+      if (allSucceeded) {
+        toast.success(t("ai:all_agents_complete"));
+      }
     } finally {
       setIsLoading(false);
     }
