@@ -202,7 +202,7 @@ const CaseDetail = () => {
       <CaseDetailHeader userEmail={user?.email} onSignOut={signOut} />
 
       {/* Main Content - Mobile-first with safe areas */}
-      <main className="container mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 pb-safe max-w-full overflow-hidden">
+      <main className="mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 pb-safe max-w-full overflow-hidden lg:max-w-7xl">
         {/* Case Header - Premium mobile card */}
         <div className="card-premium p-4 sm:p-6 mb-4 sm:mb-6">
           <div className="space-y-4">
@@ -266,10 +266,10 @@ const CaseDetail = () => {
         )}
 
         {/* Case Details & Tabs - Stack on mobile, grid on desktop */}
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-3 w-full min-w-0">
           {/* Main Content */}
-          <div className="lg:col-span-2">
-            <Tabs defaultValue="details" className="w-full">
+          <div className="lg:col-span-2 min-w-0 overflow-hidden">
+            <Tabs defaultValue="details" className="w-full min-w-0">
               {/* Tab Navigation - Horizontal scroll on mobile */}
               <div className="overflow-x-auto scrollbar-thin pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="inline-flex min-w-max gap-1 rounded-xl bg-muted/50 p-1.5">
