@@ -255,15 +255,8 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
             phase: 'per_file',
           });
 
-          for (let i = 0; i < caseFiles.length; i++) {
-            const file = caseFiles[i];
-            setFileProgress(prev => prev ? {
-              ...prev,
-              currentFileIndex: i,
-              currentFileName: file.original_filename,
-              phase: 'per_file',
-            } : null);
-
+          // Process all files in parallel
+          const filePromises = caseFiles.map(async (file) => {
             try {
               const fileResult = await callMultiAgent({
                 caseId,
@@ -273,23 +266,30 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
                 ...(referencesText?.trim() ? { referencesText } : {}),
               });
 
-              fileAnalyses.push({
+              setFileProgress(prev => prev ? {
+                ...prev,
+                completedFiles: [...prev.completedFiles, file.original_filename],
+              } : null);
+
+              return {
                 fileName: file.original_filename,
                 analysis: fileResult.analysis || JSON.stringify(fileResult),
-              });
+              };
             } catch (fileErr) {
               console.error(`[multi-agent] File ${file.original_filename} failed:`, fileErr);
-              fileAnalyses.push({
+              setFileProgress(prev => prev ? {
+                ...prev,
+                completedFiles: [...prev.completedFiles, file.original_filename],
+              } : null);
+              return {
                 fileName: file.original_filename,
                 analysis: `[Error: ${fileErr instanceof Error ? fileErr.message : "analysis failed"}]`,
-              });
+              };
             }
+          });
 
-            setFileProgress(prev => prev ? {
-              ...prev,
-              completedFiles: [...prev.completedFiles, file.original_filename],
-            } : null);
-          }
+          const results = await Promise.all(filePromises);
+          fileAnalyses.push(...results);
 
           // Synthesis phase
           setFileProgress(prev => prev ? {
