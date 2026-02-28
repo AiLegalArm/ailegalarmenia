@@ -115,13 +115,12 @@ export const FILE_ANALYSIS: ModelConfig = {
 
 /**
  * FIELD_EXTRACTION — For extracting structured fields from case materials.
- * USES: google/gemini-2.5-pro via Lovable AI Gateway
+ * USES: openai/gpt-5 for deep legal analysis
  */
 export const FIELD_EXTRACTION: ModelConfig = {
-  model: "google/gemini-2.5-pro",
-  temperature: 0.2,
+  model: "openai/gpt-5",
   max_tokens: 16000,
-  description: "Case field extraction — JSON output (temp=0.2, Gemini 2.5 Pro)",
+  description: "Case field extraction — JSON output (GPT-5, deep legal analysis)",
 };
 
 /**
