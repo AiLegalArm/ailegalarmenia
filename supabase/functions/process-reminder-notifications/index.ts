@@ -77,7 +77,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const now = new Date();
-    const checkWindows = [5, 15, 30, 60, 120, 1440];
+    const checkWindows = [5, 15, 30, 60, 120, 1440, 2880];
 
     let totalSent = 0;
     let totalErrors = 0;
