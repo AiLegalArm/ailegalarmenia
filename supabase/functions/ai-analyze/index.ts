@@ -357,16 +357,11 @@ serve(async (req) => {
                 : "unknown";
 
       if (!partyRole) {
-        return new Response(
-          JSON.stringify({
-            error:
-              "Procedural role is not set for this case. Please edit the case and select Plaintiff/Defendant/Third party (or the relevant role) before running analysis.",
-          }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
-        );
+        // Default to a neutral role based on procedure type when not set
+        partyRole = procedureType === "criminal_procedure" ? "defense"
+          : procedureType === "echr_procedure" ? "applicant"
+          : procedureType === "administrative_procedure" ? "applicant"
+          : "claimant";
       }
 
       partyContextBlock = `### Process Context (MANDATORY)\nprocedure_type: ${procedureType}\nparty_role: ${partyRole}\ncourt_instance: unknown\n`;
