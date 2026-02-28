@@ -145,6 +145,8 @@ export function CaseForm({
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isAutoFilling, setIsAutoFilling] = useState(false);
+  const [extractedFacts, setExtractedFacts] = useState<string | null>(null);
+  const [extractedLegalQuestion, setExtractedLegalQuestion] = useState<string | null>(null);
 
   const caseFormSchema = z.object({
     case_number: z.string().min(1, 'Required'),
@@ -316,6 +318,8 @@ export function CaseForm({
       if (f.current_stage && ['pretrial', 'preliminary', 'first_instance', 'appeal', 'cassation', 'enforcement', 'echr'].includes(f.current_stage)) {
         form.setValue('current_stage', f.current_stage === 'pretrial' ? 'preliminary' : f.current_stage);
       }
+      if (f.facts) setExtractedFacts(f.facts);
+      if (f.legal_question) setExtractedLegalQuestion(f.legal_question);
 
       toast({ title: t('auto_fill_success') });
     } catch (err) {
@@ -345,6 +349,8 @@ export function CaseForm({
       description: values.description || null,
       court_name: values.court_name || null,
       notes: values.notes || null,
+      facts: extractedFacts || null,
+      legal_question: extractedLegalQuestion || null,
     }, pendingFiles.length > 0 ? pendingFiles : undefined);
     
     setPendingFiles([]);
