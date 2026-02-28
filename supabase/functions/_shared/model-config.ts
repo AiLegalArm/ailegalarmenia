@@ -120,6 +120,7 @@ export const FILE_ANALYSIS: ModelConfig = {
 export const FIELD_EXTRACTION: ModelConfig = {
   model: "openai/gpt-5",
   max_tokens: 16000,
+  temperature: 0.3,
   description: "Case field extraction — JSON output (GPT-5, deep legal analysis)",
 };
 
