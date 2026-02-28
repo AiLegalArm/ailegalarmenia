@@ -75,14 +75,14 @@ export function CaseFormFileUpload({ files, onFilesChange }: CaseFormFileUploadP
                   multiple
                   className="hidden"
                   onChange={handleFileSelect}
-                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp3,.wav,.m4a"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp3,.wav,.m4a,.txt"
                 />
               </label>
             </Button>
             <span className="text-sm text-muted-foreground"> {t('common:or')} drag & drop</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            PDF, DOCX, JPG, PNG, MP3, WAV, M4A
+            PDF, DOCX, JPG, PNG, MP3, WAV, M4A, TXT
           </p>
         </div>
       </div>
