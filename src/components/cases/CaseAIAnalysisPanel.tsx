@@ -257,11 +257,11 @@ export function CaseAIAnalysisPanel({
         </p>
       </div>
       
-      <Card className="overflow-hidden">
-        <CardHeader className="p-4 sm:p-6">
-          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <Card className="overflow-hidden w-full min-w-0">
+        <CardHeader className="p-3 sm:p-6">
+          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
             <span className="text-base sm:text-lg">{t('ai:analyze')}</span>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               <Button variant="outline" size="sm" onClick={onOpenComplaintGenerator} className="h-10 rounded-xl text-mobile-sm sm:text-sm">
                 <FileSignature className="mr-2 h-4 w-4 shrink-0" />
                 <span className="truncate">
@@ -550,7 +550,7 @@ export function CaseAIAnalysisPanel({
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0">
           {!Object.values(results).some(r => r !== null) ? (
             <>
               <p className="text-sm text-muted-foreground mb-4">
@@ -558,13 +558,13 @@ export function CaseAIAnalysisPanel({
               </p>
               
               {/* Role Toggle Switches */}
-              <div className="mb-6 p-4 rounded-lg border bg-muted/30">
+              <div className="mb-6 p-3 sm:p-4 rounded-lg border bg-muted/30">
                 <p className="text-sm font-medium mb-3">
                   {i18n.language === 'hy' ? '\u054E\u0565\u0580\u056C\u0578\u0582\u056E\u0578\u0582\u0569\u0575\u0561\u0576 \u0564\u0565\u0580\u0565\u0580' 
                    : i18n.language === 'en' ? 'Analysis Roles' 
                    : '\u0420\u043E\u043B\u0438 \u0430\u043D\u0430\u043B\u0438\u0437\u0430'}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="role-prosecutor"
