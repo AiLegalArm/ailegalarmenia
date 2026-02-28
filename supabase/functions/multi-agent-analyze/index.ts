@@ -679,7 +679,7 @@ serve(async (req) => {
     // === END AUTH GUARD ===
 
     const body = await req.json();
-    const { caseId, agentType, runId, generateReport } = body;
+    const { caseId, agentType, runId, generateReport, fileId, fileAnalyses } = body;
     const referencesText: string = typeof body.referencesText === "string" ? body.referencesText : "";
 
     if (!caseId || !agentType) {
@@ -708,6 +708,111 @@ serve(async (req) => {
     if (caseError || !caseData) {
       throw new Error("Case not found");
     }
+
+    // ===== SYNTHESIS MODE: combine per-file analyses into final report =====
+    if (Array.isArray(fileAnalyses) && fileAnalyses.length > 0) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), lvl: "info", fn: "multi-agent", msg: "Synthesis mode", filesCount: fileAnalyses.length, agentType }));
+
+      let synthesisContext = `Case: ${caseData.title}\nNumber: ${caseData.case_number}\n`;
+      if (caseData.case_type) synthesisContext += `case_type: ${caseData.case_type}\n`;
+      if (caseData.facts) synthesisContext += `Facts: ${caseData.facts}\n`;
+      if (caseData.legal_question) synthesisContext += `Legal question: ${caseData.legal_question}\n`;
+
+      synthesisContext += "\n\n=== PER-FILE ANALYSES ===\n";
+      for (const fa of fileAnalyses) {
+        synthesisContext += `\n--- FILE: ${fa.fileName} ---\n${fa.analysis}\n`;
+      }
+
+      const agentSystemPrompt = (AGENT_PROMPTS[agentType as keyof typeof AGENT_PROMPTS] || AGENT_PROMPTS.evidence_collector) +
+        "\n\nYou are receiving per-file analyses done earlier by this same agent. Your task is to SYNTHESIZE them into a single comprehensive report. Merge findings, remove duplicates, and produce a unified analysis.\n";
+
+      const { callText } = await import("../_shared/openai-router.ts");
+      const synthResult = await callText("multi-agent-analyze", [
+        { role: "system", content: agentSystemPrompt },
+        { role: "user", content: synthesisContext },
+      ]);
+
+      let parsedSynthResult: Record<string, unknown> = { summary: "", analysis: synthResult.text, findings: [], evidenceItems: [] };
+      try {
+        const jsonMatch = synthResult.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsedSynthResult = { ...parsedSynthResult, ...JSON.parse(jsonMatch[0]) };
+      } catch { parsedSynthResult.analysis = synthResult.text; }
+
+      await supabase.rpc("log_api_usage", {
+        _service_type: "multi_agent_synthesis",
+        _model_name: synthResult.model_used,
+        _tokens_used: synthResult.usage?.total_tokens ?? 0,
+        _estimated_cost: (synthResult.usage?.total_tokens ?? 0) * 0.000001,
+        _metadata: { agentType, caseId, runId, mode: "synthesis", filesCount: fileAnalyses.length },
+      });
+
+      return new Response(JSON.stringify({
+        ...parsedSynthResult,
+        tokensUsed: synthResult.usage?.total_tokens ?? 0,
+        agentType,
+        mode: "synthesis",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ===== SINGLE-FILE MODE: analyze only one file =====
+    if (fileId) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), lvl: "info", fn: "multi-agent", msg: "Single-file mode", fileId, agentType }));
+
+      const { data: fileData } = await supabase
+        .from("case_files")
+        .select("id, original_filename, notes")
+        .eq("id", fileId)
+        .single();
+
+      const { data: fileVolume } = await supabase
+        .from("case_volumes")
+        .select("ocr_text, volume_number, title")
+        .eq("file_id", fileId)
+        .maybeSingle();
+
+      let fileContext = `Case: ${caseData.title}\ncase_type: ${caseData.case_type || "unknown"}\n`;
+      if (caseData.facts) fileContext += `Facts: ${caseData.facts}\n`;
+
+      fileContext += `\n--- FILE: ${fileData?.original_filename || fileId} ---\n`;
+      if (fileVolume?.ocr_text) {
+        fileContext += fileVolume.ocr_text;
+      } else if (fileData?.notes) {
+        fileContext += fileData.notes;
+      } else {
+        fileContext += "[No content available for this file]";
+      }
+
+      const fileSystemPrompt = AGENT_PROMPTS[agentType as keyof typeof AGENT_PROMPTS] || AGENT_PROMPTS.evidence_collector;
+      const { callText } = await import("../_shared/openai-router.ts");
+      const fileResult = await callText("multi-agent-analyze", [
+        { role: "system", content: fileSystemPrompt },
+        { role: "user", content: fileContext },
+      ]);
+
+      let parsedFileResult: Record<string, unknown> = { summary: "", analysis: fileResult.text, findings: [], evidenceItems: [] };
+      try {
+        const jsonMatch = fileResult.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsedFileResult = { ...parsedFileResult, ...JSON.parse(jsonMatch[0]) };
+      } catch { parsedFileResult.analysis = fileResult.text; }
+
+      await supabase.rpc("log_api_usage", {
+        _service_type: "multi_agent_file",
+        _model_name: fileResult.model_used,
+        _tokens_used: fileResult.usage?.total_tokens ?? 0,
+        _estimated_cost: (fileResult.usage?.total_tokens ?? 0) * 0.000001,
+        _metadata: { agentType, caseId, runId, fileId, mode: "single_file" },
+      });
+
+      return new Response(JSON.stringify({
+        ...parsedFileResult,
+        tokensUsed: fileResult.usage?.total_tokens ?? 0,
+        agentType,
+        mode: "single_file",
+        fileName: fileData?.original_filename || fileId,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ===== FULL CASE MODE (original behavior - fallback when no files) =====
 
     // Load volumes with OCR text
     const { data: volumes } = await supabase

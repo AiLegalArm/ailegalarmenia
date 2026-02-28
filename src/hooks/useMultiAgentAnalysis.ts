@@ -12,6 +12,14 @@ import type {
   AgentFinding
 } from "@/components/agents/types";
 
+export interface MultiAgentFileProgress {
+  totalFiles: number;
+  currentFileIndex: number;
+  currentFileName: string;
+  completedFiles: string[];
+  phase: 'per_file' | 'synthesis' | 'idle';
+}
+
 // Type-safe casting functions for DB results
 // Note: Using 'unknown' intermediate cast is the standard TypeScript pattern
 // when the runtime shape is correct but types don't statically overlap
@@ -38,6 +46,7 @@ interface UseMultiAgentAnalysisReturn {
   evidenceRegistry: EvidenceItem[];
   volumes: CaseVolume[];
   aggregatedReport: AggregatedReport | null;
+  fileProgress: MultiAgentFileProgress | null;
   
   // Volume management
   loadVolumes: (caseId: string) => Promise<void>;
@@ -67,6 +76,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
   const [evidenceRegistry, setEvidenceRegistry] = useState<EvidenceItem[]>([]);
   const [volumes, setVolumes] = useState<CaseVolume[]>([]);
   const [aggregatedReport, setAggregatedReport] = useState<AggregatedReport | null>(null);
+  const [fileProgress, setFileProgress] = useState<MultiAgentFileProgress | null>(null);
 
   // Load volumes for a case
   const loadVolumes = useCallback(async (caseId: string) => {
@@ -163,7 +173,43 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     setRuns(castToAgentRuns(data || []));
   }, []);
 
-  // Run a single agent
+  // Helper: call multi-agent-analyze with raw fetch (310s timeout)
+  const callMultiAgent = useCallback(async (
+    requestBody: Record<string, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<any> => {
+    const session = (await supabase.auth.getSession()).data.session;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/multi-agent-analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": supabaseKey,
+          "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  }, []);
+
+  // Run a single agent (with per-file processing)
   const runAgent = useCallback(async (caseId: string, agentType: AgentType, referencesText?: string): Promise<AgentAnalysisRun | null> => {
     setIsLoading(true);
     setCurrentAgent(agentType);
@@ -184,47 +230,97 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
       if (createError) {
         throw createError;
       }
-      
-      // Call the edge function with extended timeout (raw fetch)
-      const requestBody: Record<string, unknown> = {
-        caseId,
-        agentType,
-        runId: run.id
-      };
-      if (referencesText?.trim()) {
-        requestBody.referencesText = referencesText;
-      }
 
-      const session = (await supabase.auth.getSession()).data.session;
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      // Fetch case files for per-file analysis
+      const { data: caseFiles } = await supabase
+        .from("case_files")
+        .select("id, original_filename")
+        .eq("case_id", caseId)
+        .is("deleted_at", null);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 310_000);
-
-      // deno-lint-ignore no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let data: any;
+
       try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/multi-agent-analyze`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+        // Per-file mode: if there are files, analyze each one individually, then synthesize
+        if (caseFiles && caseFiles.length > 0 && agentType !== "aggregator") {
+          console.log(`[multi-agent] Per-file mode: ${caseFiles.length} files for ${agentType}`);
+          
+          const fileAnalyses: Array<{ fileName: string; analysis: string }> = [];
+          setFileProgress({
+            totalFiles: caseFiles.length,
+            currentFileIndex: 0,
+            currentFileName: caseFiles[0].original_filename,
+            completedFiles: [],
+            phase: 'per_file',
+          });
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "");
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+          for (let i = 0; i < caseFiles.length; i++) {
+            const file = caseFiles[i];
+            setFileProgress(prev => prev ? {
+              ...prev,
+              currentFileIndex: i,
+              currentFileName: file.original_filename,
+              phase: 'per_file',
+            } : null);
+
+            try {
+              const fileResult = await callMultiAgent({
+                caseId,
+                agentType,
+                runId: run.id,
+                fileId: file.id,
+                ...(referencesText?.trim() ? { referencesText } : {}),
+              });
+
+              fileAnalyses.push({
+                fileName: file.original_filename,
+                analysis: fileResult.analysis || JSON.stringify(fileResult),
+              });
+            } catch (fileErr) {
+              console.error(`[multi-agent] File ${file.original_filename} failed:`, fileErr);
+              fileAnalyses.push({
+                fileName: file.original_filename,
+                analysis: `[Error: ${fileErr instanceof Error ? fileErr.message : "analysis failed"}]`,
+              });
+            }
+
+            setFileProgress(prev => prev ? {
+              ...prev,
+              completedFiles: [...prev.completedFiles, file.original_filename],
+            } : null);
+          }
+
+          // Synthesis phase
+          setFileProgress(prev => prev ? {
+            ...prev,
+            phase: 'synthesis',
+            currentFileName: 'Synthesis...',
+          } : null);
+
+          data = await callMultiAgent({
+            caseId,
+            agentType,
+            runId: run.id,
+            fileAnalyses,
+            ...(referencesText?.trim() ? { referencesText } : {}),
+          });
+
+          setFileProgress(null);
+        } else {
+          // Fallback: full case mode (aggregator or no files)
+          const requestBody: Record<string, unknown> = {
+            caseId,
+            agentType,
+            runId: run.id,
+          };
+          if (referencesText?.trim()) {
+            requestBody.referencesText = referencesText;
+          }
+          data = await callMultiAgent(requestBody);
         }
-
-        data = await response.json();
       } catch (fetchErr) {
-        clearTimeout(timeoutId);
+        setFileProgress(null);
         // Update run with error
         await supabase
           .from("agent_analysis_runs")
@@ -310,8 +406,9 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     } finally {
       setIsLoading(false);
       setCurrentAgent(null);
+      setFileProgress(null);
     }
-  }, [t]);
+  }, [callMultiAgent, t]);
 
   // Run all agents sequentially
   const runAllAgents = useCallback(async (caseId: string, referencesText?: string) => {
@@ -463,6 +560,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     evidenceRegistry,
     volumes,
     aggregatedReport,
+    fileProgress,
     loadVolumes,
     createVolume,
     updateVolume,
