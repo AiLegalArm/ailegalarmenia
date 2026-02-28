@@ -138,6 +138,10 @@ interface AnalysisRequest {
   oldLawText?: string;
   newLawText?: string;
   strict_temporal?: boolean;
+  /** Single file ID — when set, only this file is loaded (per-file mode) */
+  fileId?: string;
+  /** Pre-computed per-file analyses — when set, skip file loading and use these for synthesis */
+  fileAnalyses?: Array<{ fileName: string; analysis: string }>;
 }
 
 // formatPracticeResults and formatPracticeContext moved to _shared/rag-search.ts
@@ -172,7 +176,7 @@ serve(async (req) => {
     }
     // === END AUTH GUARD ===
 
-    const { role, moduleId, caseId, caseFacts, legalQuestion, advocateResponse, prosecutorResponse, judgeResponse, referencesText, oldLawText, newLawText, strict_temporal: strictTemporal } =
+    const { role, moduleId, caseId, caseFacts, legalQuestion, advocateResponse, prosecutorResponse, judgeResponse, referencesText, oldLawText, newLawText, strict_temporal: strictTemporal, fileId, fileAnalyses } =
       (await req.json()) as AnalysisRequest;
 
     // Validate role - support both legacy roles and new analysis types
@@ -322,62 +326,28 @@ serve(async (req) => {
     let caseFilesContext = "";
     const fileContentsForVision: Array<{ name: string; base64: string; mimeType: string }> = [];
 
-    // Load case meta (procedure_type + party_role) so the model cannot "choose a side" on its own.
-    let procedureType: string = "unknown";
-    let partyRole: string | null = null;
-    let partyContextBlock = "";
-
-    if (caseId) {
-      const { data: caseMeta, error: caseMetaError } = await supabase
-        .from("cases")
-        .select("case_type, party_role, court_date")
-        .eq("id", caseId)
-        .maybeSingle();
-
-      if (caseMetaError) {
-        console.error("Failed to load case meta:", caseMetaError);
-        return new Response(JSON.stringify({ error: "Failed to load case settings for analysis" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+    // === SYNTHESIS MODE: Use pre-computed per-file analyses instead of loading files ===
+    if (fileAnalyses && fileAnalyses.length > 0) {
+      caseFilesContext = "\n\n## Per-File Analysis Results (Pre-computed):\n\n";
+      for (let i = 0; i < fileAnalyses.length; i++) {
+        caseFilesContext += `### File ${i + 1}: ${fileAnalyses[i].fileName}\n`;
+        caseFilesContext += `${fileAnalyses[i].analysis}\n\n---\n\n`;
       }
-
-      const caseType = (caseMeta?.case_type as string | null) ?? null;
-      partyRole = (caseMeta?.party_role as string | null) ?? null;
-
-      procedureType =
-        caseType === "civil"
-          ? "civil_procedure"
-          : caseType === "administrative"
-            ? "administrative_procedure"
-            : caseType === "criminal"
-              ? "criminal_procedure"
-              : caseType === "echr"
-                ? "echr_procedure"
-                : "unknown";
-
-      if (!partyRole) {
-        return new Response(
-          JSON.stringify({
-            error:
-              "Procedural role is not set for this case. Please edit the case and select Plaintiff/Defendant/Third party (or the relevant role) before running analysis.",
-          }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      partyContextBlock = `### Process Context (MANDATORY)\nprocedure_type: ${procedureType}\nparty_role: ${partyRole}\ncourt_instance: unknown\n`;
-
-      // Get case files
-      const { data: caseFiles, error: filesError } = await supabase
+      console.log(`[ai-analyze] Synthesis mode: using ${fileAnalyses.length} pre-computed file analyses`);
+    } else if (caseId) {
+      // Get case files - either single file (fileId) or all files
+      const filesQuery = supabase
         .from("case_files")
         .select("id, original_filename, file_type, storage_path")
         .eq("case_id", caseId)
         .is("deleted_at", null);
+      
+      if (fileId) {
+        filesQuery.eq("id", fileId);
+        console.log(`[ai-analyze] Per-file mode: loading single file ${fileId}`);
+      }
 
+      const { data: caseFiles, error: filesError } = await filesQuery;
 
       if (!filesError && caseFiles && caseFiles.length > 0) {
         const fileIds = caseFiles.map((f) => f.id);
@@ -404,8 +374,7 @@ serve(async (req) => {
 
         // Process OCR results
         if (!ocrError && ocrResults && ocrResults.length > 0) {
-          caseFilesContext +=
-            "\n\n## \u0533\u0578\u0580\u056E\u056B \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580 (Case Documents - OCR):\n\n";
+          caseFilesContext = "\n\n## \u0533\u0578\u0580\u056E\u056B \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580 (Case Documents - OCR):\n\n";
           for (let index = 0; index < ocrResults.length; index++) {
             const ocr = ocrResults[index];
             const file = fileMap.get(ocr.file_id);
@@ -518,7 +487,7 @@ serve(async (req) => {
               }
               // For PDF files without OCR, note that they need processing
               else if (fileType.includes("pdf")) {
-                caseFilesContext += `\n### PDF \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569 (\u0579\u056B \u0574\u0577\u0561\u056F\u057E\u0561\u056E): ${fileName}\n(\u0531\u0575\u057D PDF \u0586\u0561\u0575\u056C\u0568 \u0564\u0565\u057C OCR \u0579\u056B \u0561\u0576\u0581\u0565\u056C, \u056D\u0576\u0564\u0580\u0578\u0582\u0574 \u0565\u0576\u0584 \u0576\u0561\u056D \u0563\u0578\u0580\u056E\u0561\u0580\u056F\u0565\u056C OCR \u0570\u0561\u0574\u0561\u056A\u0578\u0572\u0578\u057E)\n\n`;
+                caseFilesContext += `\n### PDF \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569 (\u0579\u056B \u0574\u0577\u0561\u056F\u057E\u0561\u056E): ${fileName}\n(\u0531\u0575\u057D PDF \u0586\u0561\u0575\u056C\u0568 \u0564\u0565\u057C OCR \u0579\u056B \u0561\u0576\u0581\u0565\u056C, \u056D\u0576\u0564\u0580\u0578\u0582\u0574 \u0565\u0576\u0584 \u0576\u0561\u056D \u0563\u0578\u0580\u056E\u0561\u0580\u056F\u0565\u056C OCR \u0570\u0561\u0574\u0561\u056B\u0578\u0572\u0578\u057E)\n\n`;
               }
               // For TXT files, read directly as text
               else if (fileType.includes("text/plain") || fileName.endsWith(".txt")) {

@@ -60,7 +60,9 @@ export function CaseAIAnalysisPanel({
     isLoading: isAnalyzing,
     currentRole,
     results,
+    fileProgress,
     analyzeCase,
+    analyzeCasePerFile,
     clearResults,
     loadResults
   } = useAIAnalysis();
@@ -202,12 +204,14 @@ export function CaseAIAnalysisPanel({
       return;
     }
     
+    // Use per-file analysis for each role sequentially
     for (const role of rolesToRun) {
-      await analyzeCase(role, caseId, facts, legalQuestion || '', referencesText);
+      await analyzeCasePerFile(role, caseId, facts || undefined, legalQuestion || '', referencesText);
     }
     
-    if (canRunAggregator) {
-      await analyzeCase('aggregator', caseId, facts, legalQuestion || '', referencesText);
+    // Run aggregator if all 3 roles completed
+    if (canRunAggregator && results.advocate && results.prosecutor && results.judge) {
+      await analyzeCase('aggregator', caseId, facts || undefined, legalQuestion || '', referencesText);
     }
   };
 
@@ -256,6 +260,38 @@ export function CaseAIAnalysisPanel({
           ⚠️ {t('disclaimer:ai_warning')}
         </p>
       </div>
+
+      {/* Per-file analysis progress */}
+      {fileProgress && (
+        <Card className="overflow-hidden w-full">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="text-sm font-medium">
+                {fileProgress.phase === 'per_file' 
+                  ? `${i18n.language === 'hy' ? ' Delays  Ö' : i18n.language === 'en' ? 'Analyzing file' : 'Анализ файла'} ${fileProgress.currentFileIndex + 1}/${fileProgress.totalFiles}`
+                  : i18n.language === 'hy' ? 'Ամdelays  ' : i18n.language === 'en' ? 'Synthesizing final report...' : 'Синтез итогового отчёта...'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground truncate mb-2">{fileProgress.currentFileName}</p>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div 
+                className="bg-primary h-2 rounded-full transition-all duration-500"
+                style={{ width: `${fileProgress.phase === 'synthesis' ? 95 : ((fileProgress.completedFiles.length / fileProgress.totalFiles) * 90)}%` }}
+              />
+            </div>
+            {fileProgress.completedFiles.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {fileProgress.completedFiles.map((name, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded">
+                    <Check className="h-3 w-3 text-green-500" /> {name.substring(0, 20)}{name.length > 20 ? '...' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       
       <Card className="overflow-hidden w-full min-w-0">
         <CardHeader className="p-3 sm:p-6">
