@@ -88,14 +88,30 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
         body.judgeResponse = results.judge?.analysis || "";
       }
 
-      const { data, error } = await supabase.functions.invoke("ai-analyze", {
-        body,
-      });
+      // Use raw fetch with extended timeout (150s) to avoid browser aborting long AI calls
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 150_000);
 
-      if (error) {
-        console.error("AI analysis error:", error);
-        // Check for 402 Payment Required error
-        const errorMsg = error.message || "";
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      let response: Response;
+      try {
+        response = await fetch(`${supabaseUrl}/functions/v1/ai-analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } catch (fetchErr: unknown) {
+        clearTimeout(timeoutId);
+        console.error("AI analysis error:", fetchErr);
+        const errorMsg = fetchErr instanceof Error ? fetchErr.message : "";
         if (errorMsg.includes("402") || errorMsg.includes("Payment required") || errorMsg.includes("credits")) {
           setCreditsExhausted(true);
           toast.error(t("cases:ai_credits_exhausted"));
@@ -104,6 +120,21 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
         toast.error(t("ai:analysis_failed"));
         return null;
       }
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error("AI analysis error:", response.status, errorText);
+        if (response.status === 402 || errorText.includes("credits")) {
+          setCreditsExhausted(true);
+          toast.error(t("cases:ai_credits_exhausted"));
+          return null;
+        }
+        toast.error(t("ai:analysis_failed"));
+        return null;
+      }
+
+      const data = await response.json();
 
       if (data.error) {
         // Check for 402 in response data
@@ -189,11 +220,35 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
           judgeResponse: judgeResult?.analysis || "",
         };
 
-        const { data, error } = await supabase.functions.invoke("ai-analyze", {
-          body,
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 150_000);
+        const session = (await supabase.auth.getSession()).data.session;
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-        if (!error && !data.error) {
+        let aggResponse: Response;
+        try {
+          aggResponse = await fetch(`${supabaseUrl}/functions/v1/ai-analyze`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": supabaseKey,
+              "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+        } catch {
+          clearTimeout(timeoutId);
+          toast.error(t("analysis_failed"));
+          setCurrentRole(null);
+          return;
+        }
+        clearTimeout(timeoutId);
+
+        const data = aggResponse.ok ? await aggResponse.json() : null;
+
+        if (data && !data.error) {
           const aggregatorResult: AnalysisResult = {
             role: data.role,
             analysis: data.analysis,
@@ -208,7 +263,7 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
           
           toast.success(t("analysis_complete"));
         } else {
-          console.error("Aggregator analysis error:", error || data.error);
+          console.error("Aggregator analysis error:", data?.error);
           toast.error(t("analysis_failed"));
         }
         
