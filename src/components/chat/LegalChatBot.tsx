@@ -276,13 +276,7 @@ export function LegalChatBot({ isOpen: controlledIsOpen, onOpenChange, reference
                       : "bg-muted"
                   )}
                 >
-                  {msg.role === 'assistant' ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown>{msg.content || '\u2026'}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  )}
+                  <p className="whitespace-pre-wrap">{msg.role === 'assistant' ? (msg.content || '\u2026').replace(/\*\*/g, '').replace(/^#{1,6}\s/gm, '').replace(/^[-*]\s/gm, '\u2022 ') : msg.content}</p>
                 </div>
               </div>
             ))}
