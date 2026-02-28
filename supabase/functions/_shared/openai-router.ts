@@ -463,7 +463,7 @@ function defaultTimeout(isAudio: boolean): number {
   if (isAudio) {
     return parseInt(Deno.env.get("OPENAI_AUDIO_TIMEOUT_MS") ?? "120000", 10);
   }
-  return parseInt(Deno.env.get("OPENAI_TIMEOUT_MS") ?? "180000", 10);
+  return parseInt(Deno.env.get("OPENAI_TIMEOUT_MS") ?? "300000", 10);
 }
 
 function maxRetries(): number {
