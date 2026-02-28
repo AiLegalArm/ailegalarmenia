@@ -130,11 +130,11 @@ export function CaseFactsEditor({
 
   return (
     <Card className="mt-4">
-      <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <CardTitle className="w-full min-w-0 break-normal leading-tight sm:w-auto">
+      <CardHeader className="flex flex-col items-center gap-3">
+        <CardTitle className="w-full min-w-0 break-normal leading-tight text-center">
           {t('cases:facts_and_question', 'Facts & Legal Question')}
         </CardTitle>
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+        <div className="flex flex-wrap justify-center gap-2">
           {!isEditingFields ? (
             <>
               <Button variant="outline" size="sm" onClick={handleStartEditFields} className="w-full">
