@@ -85,7 +85,7 @@ export function useCases(filters: CaseFilters = {}) {
           .select()
           .single();
 
-        if (!error) return data;
+        if (!error) return data as Case;
 
         if (error.message?.includes('cases_case_number_active_key') && attempt < maxAttempts - 1) {
           attempt++;
@@ -98,6 +98,7 @@ export function useCases(filters: CaseFilters = {}) {
 
         throw error;
       }
+      throw new Error('Max attempts reached for case_number uniqueness');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cases'] });
