@@ -22,12 +22,22 @@ interface AnalysisResult {
   cross_exam_data?: unknown;
 }
 
+interface FileAnalysisProgress {
+  totalFiles: number;
+  currentFileIndex: number;
+  currentFileName: string;
+  completedFiles: string[];
+  phase: 'per_file' | 'synthesis' | 'idle';
+}
+
 interface UseAIAnalysisReturn {
   isLoading: boolean;
   currentRole: AIRole | null;
   results: Record<AIRole, AnalysisResult | null>;
   creditsExhausted: boolean;
+  fileProgress: FileAnalysisProgress | null;
   analyzeCase: (role: AIRole, caseId?: string, caseFacts?: string, legalQuestion?: string, referencesText?: string) => Promise<AnalysisResult | null>;
+  analyzeCasePerFile: (role: AIRole, caseId: string, caseFacts?: string, legalQuestion?: string, referencesText?: string) => Promise<AnalysisResult | null>;
   runAllRoles: (caseId?: string, caseFacts?: string, legalQuestion?: string) => Promise<void>;
   clearResults: () => void;
   loadResults: (loadedResults: Partial<Record<AIRole, AnalysisResult | null>>) => void;
@@ -38,6 +48,7 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [currentRole, setCurrentRole] = useState<AIRole | null>(null);
   const [creditsExhausted, setCreditsExhausted] = useState(false);
+  const [fileProgress, setFileProgress] = useState<FileAnalysisProgress | null>(null);
   const [results, setResults] = useState<Record<AIRole, AnalysisResult | null>>({
     advocate: null,
     prosecutor: null,
@@ -188,6 +199,188 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
     }
   }, [results, t]);
 
+  /** Per-file analysis: analyze each file individually, then synthesize into a final report */
+  const analyzeCasePerFile = useCallback(async (
+    role: AIRole,
+    caseId: string,
+    caseFacts?: string,
+    legalQuestion?: string,
+    referencesText?: string
+  ): Promise<AnalysisResult | null> => {
+    setIsLoading(true);
+    setCurrentRole(role);
+    setCreditsExhausted(false);
+
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const headers = {
+        "Content-Type": "application/json",
+        "apikey": supabaseKey,
+        "Authorization": `Bearer ${session?.access_token ?? supabaseKey}`,
+      };
+
+      // 1. Fetch list of case files
+      const { data: caseFiles, error: filesError } = await supabase
+        .from("case_files")
+        .select("id, original_filename")
+        .eq("case_id", caseId)
+        .is("deleted_at", null);
+
+      if (filesError || !caseFiles || caseFiles.length === 0) {
+        // No files — fall back to regular analysis
+        console.log("[per-file] No files found, falling back to regular analysis");
+        setFileProgress(null);
+        return analyzeCase(role, caseId, caseFacts, legalQuestion, referencesText);
+      }
+
+      // 2. Analyze each file individually
+      const fileAnalyses: Array<{ fileName: string; analysis: string }> = [];
+      setFileProgress({
+        totalFiles: caseFiles.length,
+        currentFileIndex: 0,
+        currentFileName: caseFiles[0].original_filename,
+        completedFiles: [],
+        phase: 'per_file',
+      });
+
+      for (let i = 0; i < caseFiles.length; i++) {
+        const file = caseFiles[i];
+        setFileProgress(prev => prev ? {
+          ...prev,
+          currentFileIndex: i,
+          currentFileName: file.original_filename,
+          phase: 'per_file',
+        } : null);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/ai-analyze`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              role,
+              caseId,
+              caseFacts,
+              legalQuestion,
+              referencesText: referencesText?.trim() || undefined,
+              fileId: file.id,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            console.error(`[per-file] File ${file.original_filename} failed:`, response.status, errorText);
+            if (response.status === 402) {
+              setCreditsExhausted(true);
+              toast.error(t("cases:ai_credits_exhausted"));
+              setFileProgress(null);
+              return null;
+            }
+            // Skip this file but continue
+            fileAnalyses.push({ fileName: file.original_filename, analysis: `[Error: analysis failed for this file]` });
+          } else {
+            const data = await response.json();
+            if (data.error) {
+              fileAnalyses.push({ fileName: file.original_filename, analysis: `[Error: ${data.error}]` });
+            } else {
+              fileAnalyses.push({ fileName: file.original_filename, analysis: data.analysis || "" });
+            }
+          }
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          console.error(`[per-file] File ${file.original_filename} fetch error:`, fetchErr);
+          fileAnalyses.push({ fileName: file.original_filename, analysis: `[Error: request failed]` });
+        }
+
+        setFileProgress(prev => prev ? {
+          ...prev,
+          completedFiles: [...prev.completedFiles, file.original_filename],
+        } : null);
+      }
+
+      // 3. Synthesis: send all per-file analyses for final report
+      setFileProgress(prev => prev ? { ...prev, phase: 'synthesis', currentFileName: 'Synthesis...' } : null);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/ai-analyze`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            role,
+            caseId,
+            caseFacts,
+            legalQuestion,
+            referencesText: referencesText?.trim() || undefined,
+            fileAnalyses,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          console.error("[per-file] Synthesis failed:", response.status, errorText);
+          toast.error(t("ai:analysis_failed"));
+          setFileProgress(null);
+          return null;
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          toast.error(data.error);
+          setFileProgress(null);
+          return null;
+        }
+
+        const result: AnalysisResult = {
+          role: data.role,
+          analysis: data.analysis,
+          sources: data.sources || [],
+          model: data.model_used || data.model,
+          precedent_data: data.precedent_data || null,
+          deadline_data: data.deadline_data || null,
+          comparator_data: data.comparator_data || null,
+          audit_data: data.audit_data || null,
+          draft_text: data.draft_text || null,
+          strategy_data: data.strategy_data || null,
+          evidence_weakness_data: data.evidence_weakness_data || null,
+          risk_factors_data: data.risk_factors_data || null,
+          law_update_data: data.law_update_data || null,
+          cross_exam_data: data.cross_exam_data || null,
+        };
+
+        setResults(prev => ({ ...prev, [role]: result }));
+        toast.success(t("ai:analysis_complete"));
+        setFileProgress(null);
+        return result;
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        console.error("[per-file] Synthesis fetch error:", fetchErr);
+        toast.error(t("ai:analysis_failed"));
+        setFileProgress(null);
+        return null;
+      }
+    } catch (error) {
+      console.error("[per-file] Error:", error);
+      toast.error(t("ai:analysis_failed"));
+      setFileProgress(null);
+      return null;
+    } finally {
+      setIsLoading(false);
+      setCurrentRole(null);
+      setFileProgress(null);
+    }
+  }, [analyzeCase, t]);
+
   const runAllRoles = useCallback(async (
     caseId?: string,
     caseFacts?: string,
@@ -306,7 +499,9 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
     currentRole,
     results,
     creditsExhausted,
+    fileProgress,
     analyzeCase,
+    analyzeCasePerFile,
     runAllRoles,
     clearResults,
     loadResults,
