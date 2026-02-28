@@ -140,9 +140,8 @@ serve(async (req) => {
     }
 
     // --- Download files from Storage and build multimodal content ---
-    const userContent: Array<Record<string, unknown>> = [
-      { type: "text", text: "Extract case information from the following documents:" },
-    ];
+    const textParts: string[] = [];
+    const visionParts: Array<Record<string, unknown>> = [];
 
     for (const fileRef of files.slice(0, 5)) {
       // Security: verify the file path belongs to the requesting user
@@ -164,30 +163,37 @@ serve(async (req) => {
       if (fileRef.mime.startsWith("image/")) {
         // Image → multimodal vision
         const b64 = bytesToBase64(bytes);
-        userContent.push(
-          { type: "text", text: `\nDocument: "${fileRef.name}"` },
+        visionParts.push(
+          { type: "text", text: `[Изображение: "${fileRef.name}"]` },
           { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
         );
       } else if (fileRef.mime === "application/pdf") {
         // PDF → send as image_url with data URI (GPT-5 supports PDF input)
         const b64 = bytesToBase64(bytes);
-        userContent.push(
-          { type: "text", text: `\nPDF document: "${fileRef.name}"` },
+        visionParts.push(
+          { type: "text", text: `[PDF: "${fileRef.name}"]` },
           { type: "image_url", image_url: { url: `data:${fileRef.mime};base64,${b64}` } },
         );
       } else {
         // Text-based files (DOCX, TXT etc.) — decode as text
         try {
           const decoded = new TextDecoder().decode(bytes);
-          userContent.push({
-            type: "text",
-            text: `\nDocument "${fileRef.name}":\n${decoded.slice(0, 10000)}`,
-          });
+          textParts.push(`--- Файл: "${fileRef.name}" ---\n${decoded.slice(0, 10000)}`);
         } catch {
           console.warn(`Could not decode file ${fileRef.name}`);
         }
       }
     }
+
+    // Build user prompt with structured markers
+    const filesBlock = textParts.length > 0 ? textParts.join("\n\n") : "";
+    const userContent: Array<Record<string, unknown>> = [
+      {
+        type: "text",
+        text: `Проанализируй следующие тексты файлов и верни JSON по схеме.\n\n<<<FILES_START>>>\n${filesBlock}\n<<<FILES_END>>>`,
+      },
+      ...visionParts,
+    ];
 
     // --- Call AI ---
     const { callGatewayBypass } = await import("../_shared/gateway-bypass.ts");
