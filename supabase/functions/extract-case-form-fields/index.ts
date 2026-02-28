@@ -54,81 +54,72 @@ serve(async (req) => {
       });
     }
 
-    const body = await req.json();
-
-    // Support both old base64 format and new storage-based format
-    const storagePaths = body.storagePaths as Array<{ name: string; mimeType: string; storagePath: string }> | undefined;
-    const legacyFiles = body.files as Array<{ name: string; mimeType: string; base64: string }> | undefined;
-
-    if ((!storagePaths || storagePaths.length === 0) && (!legacyFiles || legacyFiles.length === 0)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "No files provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    // Support FormData (preferred) and legacy JSON formats
+    const contentType = req.headers.get("content-type") || "";
+    
     // Build multimodal content
     const userContent: Array<Record<string, unknown>> = [
       { type: "text", text: "Extract case information from the following documents:" }
     ];
 
-    // Process storage-based files
-    if (storagePaths && storagePaths.length > 0) {
-      for (const file of storagePaths.slice(0, 5)) {
-        const { name, mimeType, storagePath } = file;
+    if (contentType.includes("multipart/form-data")) {
+      // FormData approach - files sent directly
+      const formData = await req.formData();
+      const files = formData.getAll("files") as File[];
+      
+      if (!files || files.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "No files provided" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-        // Download file from storage
-        const { data: fileData, error: downloadError } = await sb.storage
-          .from('case-files')
-          .download(storagePath);
-
-        if (downloadError || !fileData) {
-          console.warn(`Failed to download ${name}:`, downloadError?.message);
-          continue;
-        }
-
-        const arrayBuffer = await fileData.arrayBuffer();
+      for (const file of files.slice(0, 5)) {
+        const arrayBuffer = await file.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
-
-        // Check size limit: 10MB per file for AI processing
+        
         if (bytes.length > 10 * 1024 * 1024) {
-          console.warn(`File ${name} too large (${bytes.length} bytes), skipping`);
+          console.warn(`File ${file.name} too large (${bytes.length} bytes), skipping`);
           continue;
         }
 
         const base64 = uint8ToBase64(bytes);
+        const mimeType = file.type || "application/octet-stream";
 
         if (mimeType.startsWith("image/")) {
-          userContent.push({ type: "text", text: `\nDocument: "${name}"` });
+          userContent.push({ type: "text", text: `\nDocument: "${file.name}"` });
           userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
         } else if (mimeType === "application/pdf") {
-          userContent.push({ type: "text", text: `\nPDF document: "${name}" (analyze the content to extract case fields)` });
+          userContent.push({ type: "text", text: `\nPDF document: "${file.name}"` });
           userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
         } else {
-          // Text-based files (DOCX etc.)
           try {
-            // Try parsing DOCX
-            if (mimeType.includes("wordprocessingml") || name.endsWith(".docx")) {
+            if (mimeType.includes("wordprocessingml") || file.name.endsWith(".docx")) {
               const { parseDocx } = await import("../_shared/docx-parser.ts");
               const text = await parseDocx(bytes);
-              userContent.push({ type: "text", text: `\nDocument "${name}":\n${text.slice(0, 15000)}` });
+              userContent.push({ type: "text", text: `\nDocument "${file.name}":\n${text.slice(0, 15000)}` });
             } else {
               const decoder = new TextDecoder();
               const text = decoder.decode(bytes);
-              userContent.push({ type: "text", text: `\nDocument "${name}":\n${text.slice(0, 15000)}` });
+              userContent.push({ type: "text", text: `\nDocument "${file.name}":\n${text.slice(0, 15000)}` });
             }
           } catch (e) {
-            console.warn(`Could not parse file ${name}:`, e);
+            console.warn(`Could not parse file ${file.name}:`, e);
           }
         }
-
-        // Clean up temp file from storage
-        sb.storage.from('case-files').remove([storagePath]).catch(() => {});
       }
-    }
+    } else {
+      // Legacy JSON format
+      const body = await req.json();
+      const legacyFiles = body.files as Array<{ name: string; mimeType: string; base64: string }> | undefined;
 
-    // Fallback: legacy base64 format
-    if (legacyFiles && legacyFiles.length > 0 && userContent.length <= 1) {
+      if (!legacyFiles || legacyFiles.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "No files provided" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       for (const file of legacyFiles.slice(0, 5)) {
         const { name, mimeType, base64 } = file;
         if (mimeType.startsWith("image/")) {
@@ -139,8 +130,15 @@ serve(async (req) => {
           userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
         } else {
           try {
-            const decoded = atob(base64);
-            userContent.push({ type: "text", text: `\nDocument "${name}":\n${decoded.slice(0, 10000)}` });
+            if (mimeType.includes("wordprocessingml") || name.endsWith(".docx")) {
+              const { parseDocx } = await import("../_shared/docx-parser.ts");
+              const raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+              const text = await parseDocx(raw);
+              userContent.push({ type: "text", text: `\nDocument "${name}":\n${text.slice(0, 15000)}` });
+            } else {
+              const decoded = atob(base64);
+              userContent.push({ type: "text", text: `\nDocument "${name}":\n${decoded.slice(0, 10000)}` });
+            }
           } catch {
             console.warn(`Could not decode file ${name}`);
           }

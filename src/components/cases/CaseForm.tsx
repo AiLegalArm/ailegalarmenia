@@ -243,42 +243,24 @@ export function CaseForm({
     }
     setIsAutoFilling(true);
     try {
-      // Read files as base64 using safe chunked encoding
-      const filesData = await Promise.all(
-        pendingFiles.slice(0, 5).map(async (file) => {
-          const arrayBuffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          // Safe base64 encoding without stack overflow
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-            for (let j = 0; j < chunk.length; j++) {
-              binary += String.fromCharCode(chunk[j]);
-            }
-          }
-          return {
-            name: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            base64: btoa(binary),
-          };
-        })
-      );
+      // Send files as FormData to avoid large JSON/base64 payload issues
+      const formData = new FormData();
+      for (const file of pendingFiles.slice(0, 5)) {
+        formData.append('files', file, file.name);
+      }
 
-      // Use direct fetch with longer timeout instead of supabase.functions.invoke
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const session = (await supabase.auth.getSession()).data.session;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90000);
+      const timeout = setTimeout(() => controller.abort(), 120000);
 
       const response = await fetch(`${supabaseUrl}/functions/v1/extract-case-form-fields`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token}`,
           'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         },
-        body: JSON.stringify({ files: filesData }),
+        body: formData,
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -288,9 +270,6 @@ export function CaseForm({
         throw new Error(errText || `HTTP ${response.status}`);
       }
       const data = await response.json();
-      const error = null;
-
-      if (error) throw error;
       if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
 
       const f = data.fields;
