@@ -24,7 +24,6 @@ verify_jwt = false
 [functions.legal-chat]
 
 [functions.extract-case-fields]
-verify_jwt = false
 
 [functions.extract-case-form-fields]
 verify_jwt = false

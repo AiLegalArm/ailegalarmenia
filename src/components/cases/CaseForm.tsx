@@ -243,61 +243,29 @@ export function CaseForm({
     }
     setIsAutoFilling(true);
     try {
-      // Read file as text on client side to avoid payload/CORS issues with binary uploads
-      const file = pendingFiles[0];
-      let fileText = '';
-      
-      if (file.name.endsWith('.docx') || file.type.includes('wordprocessingml')) {
-        // Read DOCX as array buffer and send as base64
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        // Safe chunked base64 encoding to avoid stack overflow
-        const chunkSize = 8192;
-        let base64 = '';
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          const chunk = bytes.slice(i, i + chunkSize);
-          base64 += String.fromCharCode(...chunk);
-        }
-        const b64 = btoa(base64);
-        
-        const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
-          body: { files: [{ name: file.name, mimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', base64: b64 }] },
-        });
-        if (error) throw error;
-        if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
-        fileText = JSON.stringify(data); // placeholder to skip below
-        
-        const f = data.fields;
-        if (f.case_number) form.setValue('case_number', f.case_number);
-        if (f.title) form.setValue('title', f.title);
-        if (f.description) form.setValue('description', f.description);
-        if (f.case_type && ['criminal', 'civil', 'administrative', 'echr'].includes(f.case_type)) {
-          form.setValue('case_type', f.case_type);
-        }
-        if (f.party_role) form.setValue('party_role', f.party_role);
-        if (f.court_name) form.setValue('court_name', f.court_name);
-        if (f.current_stage && ['preliminary', 'first_instance', 'appeal', 'cassation', 'echr'].includes(f.current_stage)) {
-          form.setValue('current_stage', f.current_stage);
-        }
-        toast({ title: t('auto_fill_success') });
-        return;
-      }
-      
-      // For other file types, use the same SDK invoke
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      const chunkSize = 8192;
-      let base64Str = '';
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.slice(i, i + chunkSize);
-        base64Str += String.fromCharCode(...chunk);
-      }
-      const b64Data = btoa(base64Str);
-      
-      const { data, error: invokeError } = await supabase.functions.invoke('extract-case-form-fields', {
-        body: { files: [{ name: file.name, mimeType: file.type || 'application/octet-stream', base64: b64Data }] },
+      // Read files as base64
+      const filesData = await Promise.all(
+        pendingFiles.slice(0, 5).map(async (file) => {
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let base64 = '';
+          const chunkSize = 32768;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            base64 += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+          }
+          return {
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            base64: btoa(base64),
+          };
+        })
+      );
+
+      const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
+        body: { files: filesData }
       });
-      if (invokeError) throw invokeError;
+
+      if (error) throw error;
       if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
 
       const f = data.fields;

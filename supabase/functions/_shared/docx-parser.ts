@@ -103,7 +103,8 @@ async function decompressEntry(entry: ZipEntry): Promise<Uint8Array> {
   }
   if (entry.compressionMethod === 8) {
     // DecompressionStream expects "deflate-raw" for raw deflate (no zlib header)
-    const ds = new DecompressionStream("deflate-raw" as CompressionFormat);
+    // deno-lint-ignore no-explicit-any
+    const ds = new DecompressionStream("raw" as any);
     const writer = ds.writable.getWriter();
     const reader = ds.readable.getReader();
 
