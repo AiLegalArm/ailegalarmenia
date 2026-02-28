@@ -108,7 +108,7 @@ export function BulkOcrButton({ caseId, files, existingOcrFileIds, forceProcess 
       throw new Error(msg);
     }
 
-    if (data.success && data.extracted_text) return true;
+    if ((data.ok || data.success) && (data.text || data.extracted_text)) return true;
 
     const errMsg = data.error || data.warnings?.[0] || 'OCR failed';
     if (errMsg.includes('Rate limit') || errMsg.includes('429')) {
