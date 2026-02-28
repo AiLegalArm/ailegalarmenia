@@ -3,52 +3,31 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { FIELD_EXTRACTION, buildModelParams } from "../_shared/model-config.ts";
 import { handleCors } from "../_shared/edge-security.ts";
 
-const SYSTEM_PROMPT = `You are a Senior Legal Analyst specializing in Armenian criminal law (RA). Your task is to perform DEEP PROFESSIONAL extraction of all legally significant information from case materials.
-
-EXTRACTION PROTOCOL — MANDATORY DEPTH REQUIREMENTS:
-
-1. CASE NUMBER (Գործի համար):
-   - Patterns: ԿԴ/1718/02/24, ԵԱԴ/1234/01/25, ԿԴ-1234-2024, XXXX/NN/NN
-   - Also look for: «գործ N», «գործ թիվ», «дело N»
-   - Return EXACT case number as written
-
-2. DESCRIPTION (Նկարագրություն) — PROFESSIONAL LEGAL SUMMARY:
-   - State the criminal charge / legal qualification (e.g., ՀՀ ՔՕ հոդված 104 — Սպանություն)
-   - Identify all parties: կասկածյալ/մեղադրյալ, տուժող, վկաներ, հետաքննող մարմին
-   - Court name and jurisdiction
-   - Current procedural stage
-   - Write 4-6 sentences in formal legal Armenian
-
-3. FACTS (Փաստեր) — EXHAUSTIVE FACTUAL RECONSTRUCTION:
-   - WHAT happened: precise criminal act, method (modus operandi), weapon/instrument
-   - WHEN: exact date/time or estimated time of incident
-   - WHERE: exact location, crime scene description
-   - WHO: full identification of all known parties (names, roles, relationships)
-   - HOW: sequence of events, cause of death/harm (if available)
-   - Physical evidence available: forensic reports, autopsy (ՓՓԱ), CCTV, DNA, ballistics
-   - Witness statements summary
-   - Investigative actions taken
-   - If information is ABSENT from materials — explicitly state: «[ԲԱՑԱԿԱՅՈՒՄ Է — անհրաժեշտ է ձեռք բերել]»
-
-4. LEGAL QUESTION (Իրավաբանական հարց) — CRIMINAL LAW ANALYSIS:
-   - Exact criminal qualification: article, part, subpart of RA Criminal Code
-   - Elements of the crime that must be proven (corpus delicti): objective side, subjective side (intent/motive), subject, object
-   - Aggravating/mitigating circumstances to examine
-   - Admissibility issues for key evidence
-   - Fair trial concerns (ՀՀ ՔԴՕ հոդվածներ)
-   - List of investigative actions REQUIRED but not yet performed
-   - Key legal questions for the defense/prosecution to resolve
-   - Potential procedural violations to examine
-
-CRITICAL RULES:
-- ALWAYS respond in formal legal Armenian (Հայերեն)
-- Use professional legal terminology throughout
-- For MISSING data: write «[ԲԱՑԱԿԱՅՈՒՄ Է — անհրաժեշտ է ձեռք բերել]» — NEVER fabricate facts
-- For homicide cases: ALWAYS include forensic evidence checklist, autopsy status, chain of custody
-- Extract ALL available information — be thorough, not brief
-- If PDF/image contains legal documents — read and extract every legally relevant detail`;
-
-
+const SYSTEM_PROMPT = [
+  "Ты — юридический аналитик по делам Республики Армения.",
+  "",
+  "Тебе передан агрегированный текст дела (все файлы + OCR).",
+  "Документы могут охватывать несколько стадий процесса.",
+  "",
+  "СТРОГИЕ ПРАВИЛА:",
+  "",
+  "1) Не выдумывай — извлекай только то, что есть в материалах.",
+  "2) Если данных недостаточно — прямо укажи: «[\u0532\u0531\u0551\u0531\u053f\u0531\u0545\u0548\u0552\u0544 \u0538 — \u0561\u0576\u0570\u0580\u0561\u056b\u0565\u0577\u057f \u0567 \u0571\u0565\u057c\u0584 \u0562\u0565\u0580\u0565\u056c]».",
+  "3) PII (\u0430\u0434\u0440\u0435\u0441\u0430, \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u044b, \u043f\u0430\u0441\u043f\u043e\u0440\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435) \u043c\u0430\u0441\u043a\u0438\u0440\u0443\u0439 \"***\".",
+  "",
+  "facts — \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0439 \u0442\u0435\u043a\u0441\u0442 10\u201325 \u043f\u0443\u043d\u043a\u0442\u043e\u0432:",
+  "",
+  "1) \u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438 (\u0438\u043c\u0435\u043d\u0430 \u043c\u0430\u0441\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u044b \u043f\u0440\u0438 \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u0438)",
+  "2) \u0425\u0440\u043e\u043d\u043e\u043b\u043e\u0433\u0438\u044f \u0441 \u0434\u0430\u0442\u0430\u043c\u0438",
+  "3) \u041f\u0440\u043e\u0446\u0435\u0441\u0441\u0443\u0430\u043b\u044c\u043d\u044b\u0435 \u0440\u0435\u0448\u0435\u043d\u0438\u044f (1 \u0438\u043d\u0441\u0442\u0430\u043d\u0446\u0438\u044f \u2192 \u0430\u043f\u0435\u043b\u043b\u044f\u0446\u0438\u044f \u2192 \u043a\u0430\u0441\u0441\u0430\u0446\u0438\u044f)",
+  "4) \u0427\u0442\u043e \u043e\u0431\u0436\u0430\u043b\u0443\u0435\u0442\u0441\u044f",
+  "5) \u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0441\u0442\u0430\u0434\u0438\u044f (\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0438 \u043f\u043e \u043f\u0440\u0430\u0432\u0438\u043b\u0443 \"\u0441\u0430\u043c\u0430\u044f \u043f\u043e\u0437\u0434\u043d\u044f\u044f \u0434\u0430\u0442\u0430\")",
+  "",
+  "\u0415\u0441\u043b\u0438 \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b \u043e\u0445\u0432\u0430\u0442\u044b\u0432\u0430\u044e\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0441\u0442\u0430\u0434\u0438\u0439 — \u044f\u0432\u043d\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0441\u043b\u0438 \u0438\u0445.",
+  "",
+  "legal_question — 1\u20133 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f.",
+  "\u0413\u043b\u0430\u0432\u043d\u044b\u0439 \u044e\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0432\u043e\u043f\u0440\u043e\u0441, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0440\u0430\u0441\u0441\u043c\u0430\u0442\u0440\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u043d\u0430 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0441\u0442\u0430\u0434\u0438\u0438.",
+].join("\n");
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors.errorResponse) return cors.errorResponse;
@@ -154,7 +133,7 @@ serve(async (req) => {
     if (context.trim()) {
       userMessageContent.push({
         type: "text",
-        text: `Extract case number, description, facts and legal question from the following case materials:\n${context}`
+        text: `Проанализируй следующие материалы дела и извлеки facts и legal_question.\n\n<<<CASE_START>>>\n${context}\n<<<CASE_END>>>`
       });
     }
 
@@ -215,12 +194,12 @@ serve(async (req) => {
           if (!hasTextContext && userMessageContent.length === 0) {
             userMessageContent.push({
               type: "text",
-              text: `Extract case number, description, facts and legal question from this uploaded image: "${file.original_filename}"`
+              text: `Проанализируй это изображение и извлеки facts и legal_question: "${file.original_filename}"`
             });
           } else {
             userMessageContent.push({
               type: "text",
-              text: `\nAlso analyze this uploaded image: "${file.original_filename}"`
+              text: `\n[Изображение: "${file.original_filename}"]`
             });
           }
 
@@ -265,25 +244,25 @@ serve(async (req) => {
               type: "function",
               function: {
                 name: "extract_case_fields",
-                description: "Extract case number, description, facts and legal question from provided materials",
+                description: "Извлечь facts и legal_question из материалов дела",
                 parameters: {
                   type: "object",
                   properties: {
                     case_number: {
                       type: "string",
-                      description: "Case number found in documents (exact format). Return empty string if not found."
+                      description: "Номер дела как указан в документах. Пустая строка если не найден."
                     },
                     description: {
                       type: "string",
-                      description: "PROFESSIONAL legal summary in Armenian (4-6 sentences): criminal charge with RA Criminal Code article, all parties (defendant/victim/investigative body), court, procedural stage. Use formal legal terminology."
+                      description: "Краткое описание дела 3-5 предложений: предмет, стороны, суд, стадия."
                     },
                     facts: {
                       type: "string",
-                      description: "EXHAUSTIVE factual reconstruction in Armenian: (1) WHAT happened - crime type, method, weapon/instrument; (2) WHEN - exact date/time; (3) WHERE - location; (4) WHO - all parties with roles; (5) HOW - sequence of events; (6) evidence available: forensic/autopsy/CCTV/DNA/ballistics; (7) witness statements; (8) investigative actions taken. For MISSING data write: [\u0532\u0531\u0551\u0531KAYUM \u0538 \u2014 \u0561\u0576hrajesht e jerk berel]. Be thorough and exhaustive."
+                      description: "Структурированный текст 10-25 пунктов: участники, хронология, процессуальные решения по стадиям, что обжалуется, текущая стадия."
                     },
                     legal_question: {
                       type: "string",
-                      description: "DEEP criminal law analysis in Armenian: (1) exact RA Criminal Code qualification (article/part/subpart); (2) corpus delicti elements to prove; (3) aggravating/mitigating circumstances; (4) evidence admissibility issues; (5) fair trial concerns per RA CPC; (6) list of required investigative actions not yet performed; (7) key defense/prosecution questions; (8) potential procedural violations. Professional legal language required."
+                      description: "1-3 предложения: главный юридический вопрос на текущей стадии."
                     }
                   },
                   required: ["case_number", "description", "facts", "legal_question"]
