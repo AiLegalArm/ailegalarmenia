@@ -188,17 +188,24 @@ serve(async (req) => {
       }
     }
 
-    // Build user prompt — apply map-reduce if text is too large
-    let filesBlock = textParts.length > 0 ? textParts.join("\n\n") : "";
+    // Build user prompt — apply per-file map-reduce if any file exceeds 110K chars
+    const PER_FILE_CHAR_LIMIT = 110_000;
+    const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
     
-    if (filesBlock.length > 100_000) {
-      const { mapReduceSummarize } = await import("../_shared/map-reduce-summarizer.ts");
-      const mrResult = await mapReduceSummarize(filesBlock);
-      if (mrResult.wasReduced) {
-        console.log(`Map-Reduce: ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
-        filesBlock = mrResult.summary;
+    const processedParts: string[] = [];
+    for (const part of textParts) {
+      if (part.length > PER_FILE_CHAR_LIMIT) {
+        const mrResult = await mapReduceSummarize(part);
+        if (mrResult.wasReduced) {
+          console.log(`Per-file Map-Reduce: ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
+        }
+        processedParts.push(mrResult.summary);
+      } else {
+        processedParts.push(part);
       }
     }
+    
+    let filesBlock = processedParts.length > 0 ? processedParts.join("\n\n") : "";
     
     const userContent: Array<Record<string, unknown>> = [
       {

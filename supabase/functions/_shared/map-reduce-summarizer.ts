@@ -12,7 +12,7 @@
 import { callText } from "./openai-router.ts";
 
 /** Threshold in chars above which Map-Reduce is triggered */
-const MAP_REDUCE_THRESHOLD = 100_000;
+const MAP_REDUCE_THRESHOLD = 110_000;
 
 /** Max chars per chunk for the "map" phase */
 const CHUNK_SIZE = 12_000;
