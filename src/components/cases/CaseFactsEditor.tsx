@@ -12,6 +12,8 @@ import { getFunctionsInvokeErrorMessage, isNoDataForExtractionMessage } from '@/
 
 interface CaseFactsEditorProps {
   caseId: string;
+  caseTitle: string;
+  caseNumber: string;
   description?: string | null;
   facts?: string | null;
   legalQuestion?: string | null;
@@ -21,6 +23,8 @@ interface CaseFactsEditorProps {
 
 export function CaseFactsEditor({
   caseId,
+  caseTitle,
+  caseNumber,
   description,
   facts,
   legalQuestion,
@@ -138,7 +142,7 @@ export function CaseFactsEditor({
     <Card className="mt-4">
       <CardHeader>
         <CardTitle className="w-full min-w-0 break-normal leading-tight">
-          {t('cases:facts_and_question', 'Facts & Legal Question')}
+          {caseTitle} — {caseNumber}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
