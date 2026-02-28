@@ -281,11 +281,27 @@ export function CaseForm({
         });
       }
 
-      const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
-        body: { files: fileRefs },
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180_000);
+      
+      const session = (await supabase.auth.getSession()).data.session;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      const resp = await fetch(`${supabaseUrl}/functions/v1/extract-case-form-fields`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${session?.access_token ?? supabaseKey}`,
+        },
+        body: JSON.stringify({ files: fileRefs }),
+        signal: controller.signal,
       });
-
-      if (error) throw error;
+      clearTimeout(timeout);
+      
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
       if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
 
       const f = data.fields;
@@ -297,8 +313,8 @@ export function CaseForm({
       }
       if (f.party_role) form.setValue('party_role', f.party_role);
       if (f.court_name) form.setValue('court_name', f.court_name);
-      if (f.current_stage && ['preliminary', 'first_instance', 'appeal', 'cassation', 'echr'].includes(f.current_stage)) {
-        form.setValue('current_stage', f.current_stage);
+      if (f.current_stage && ['pretrial', 'preliminary', 'first_instance', 'appeal', 'cassation', 'enforcement', 'echr'].includes(f.current_stage)) {
+        form.setValue('current_stage', f.current_stage === 'pretrial' ? 'preliminary' : f.current_stage);
       }
 
       toast({ title: t('auto_fill_success') });
