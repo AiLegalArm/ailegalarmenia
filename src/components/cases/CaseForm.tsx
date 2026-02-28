@@ -243,26 +243,32 @@ export function CaseForm({
     }
     setIsAutoFilling(true);
     try {
-      // Read files as base64
-      const filesData = await Promise.all(
-        pendingFiles.slice(0, 5).map(async (file) => {
-          const arrayBuffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let base64 = '';
-          const chunkSize = 32768;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            base64 += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-          }
-          return {
-            name: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            base64: btoa(base64),
-          };
-        })
-      );
+      // Upload files to temp storage, then pass paths to edge function
+      const uploadedFiles: Array<{ name: string; mimeType: string; storagePath: string }> = [];
+      const tempPrefix = `temp-autofill/${crypto.randomUUID()}`;
+
+      for (const file of pendingFiles.slice(0, 5)) {
+        const storagePath = `${tempPrefix}/${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('case-files')
+          .upload(storagePath, file, { upsert: true });
+        if (uploadError) {
+          console.warn(`Failed to upload ${file.name}:`, uploadError.message);
+          continue;
+        }
+        uploadedFiles.push({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          storagePath,
+        });
+      }
+
+      if (uploadedFiles.length === 0) {
+        throw new Error('Failed to upload files for analysis');
+      }
 
       const { data, error } = await supabase.functions.invoke('extract-case-form-fields', {
-        body: { files: filesData }
+        body: { storagePaths: uploadedFiles }
       });
 
       if (error) throw error;

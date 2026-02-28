@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors } from "../_shared/edge-security.ts";
+import { uint8ToBase64 } from "../_shared/base64.ts";
 
 const COURTS_MAP: Record<string, string> = {
   "\u0544\u0549\u0535\u0534": "\u0544\u0561\u0580\u0564\u0578\u0582 \u056b\u0580\u0561\u057e\u0578\u0582\u0576\u0584\u0576\u0565\u0580\u056b \u0565\u057e\u0580\u043e\u043f\u0561\u056f\u0561\u0576 \u0564\u0561\u057f\u0561\u0580\u0561\u0576 (\u0544\u0549\u0535\u0534)",
@@ -53,8 +54,13 @@ serve(async (req) => {
       });
     }
 
-    const { files } = await req.json();
-    if (!files || !Array.isArray(files) || files.length === 0) {
+    const body = await req.json();
+
+    // Support both old base64 format and new storage-based format
+    const storagePaths = body.storagePaths as Array<{ name: string; mimeType: string; storagePath: string }> | undefined;
+    const legacyFiles = body.files as Array<{ name: string; mimeType: string; base64: string }> | undefined;
+
+    if ((!storagePaths || storagePaths.length === 0) && (!legacyFiles || legacyFiles.length === 0)) {
       return new Response(
         JSON.stringify({ success: false, error: "No files provided" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -66,38 +72,78 @@ serve(async (req) => {
       { type: "text", text: "Extract case information from the following documents:" }
     ];
 
-    for (const file of files.slice(0, 5)) {
-      const { name, mimeType, base64 } = file as { name: string; mimeType: string; base64: string };
-      
-      if (mimeType.startsWith("image/")) {
-        userContent.push({
-          type: "text",
-          text: `\nDocument: "${name}"`
-        });
-        userContent.push({
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${base64}` }
-        });
-      } else if (mimeType === "application/pdf") {
-        // For PDFs, include as text context if small
-        userContent.push({
-          type: "text",
-          text: `\nPDF document: "${name}" (analyze the content to extract case fields)`
-        });
-        userContent.push({
-          type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${base64}` }
-        });
-      } else {
-        // Text-based files
-        try {
-          const decoded = atob(base64);
-          userContent.push({
-            type: "text",
-            text: `\nDocument "${name}":\n${decoded.slice(0, 10000)}`
-          });
-        } catch {
-          console.warn(`Could not decode file ${name}`);
+    // Process storage-based files
+    if (storagePaths && storagePaths.length > 0) {
+      for (const file of storagePaths.slice(0, 5)) {
+        const { name, mimeType, storagePath } = file;
+
+        // Download file from storage
+        const { data: fileData, error: downloadError } = await sb.storage
+          .from('case-files')
+          .download(storagePath);
+
+        if (downloadError || !fileData) {
+          console.warn(`Failed to download ${name}:`, downloadError?.message);
+          continue;
+        }
+
+        const arrayBuffer = await fileData.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+
+        // Check size limit: 10MB per file for AI processing
+        if (bytes.length > 10 * 1024 * 1024) {
+          console.warn(`File ${name} too large (${bytes.length} bytes), skipping`);
+          continue;
+        }
+
+        const base64 = uint8ToBase64(bytes);
+
+        if (mimeType.startsWith("image/")) {
+          userContent.push({ type: "text", text: `\nDocument: "${name}"` });
+          userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
+        } else if (mimeType === "application/pdf") {
+          userContent.push({ type: "text", text: `\nPDF document: "${name}" (analyze the content to extract case fields)` });
+          userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
+        } else {
+          // Text-based files (DOCX etc.)
+          try {
+            // Try parsing DOCX
+            if (mimeType.includes("wordprocessingml") || name.endsWith(".docx")) {
+              const { parseDocx } = await import("../_shared/docx-parser.ts");
+              const text = await parseDocx(bytes);
+              userContent.push({ type: "text", text: `\nDocument "${name}":\n${text.slice(0, 15000)}` });
+            } else {
+              const decoder = new TextDecoder();
+              const text = decoder.decode(bytes);
+              userContent.push({ type: "text", text: `\nDocument "${name}":\n${text.slice(0, 15000)}` });
+            }
+          } catch (e) {
+            console.warn(`Could not parse file ${name}:`, e);
+          }
+        }
+
+        // Clean up temp file from storage
+        sb.storage.from('case-files').remove([storagePath]).catch(() => {});
+      }
+    }
+
+    // Fallback: legacy base64 format
+    if (legacyFiles && legacyFiles.length > 0 && userContent.length <= 1) {
+      for (const file of legacyFiles.slice(0, 5)) {
+        const { name, mimeType, base64 } = file;
+        if (mimeType.startsWith("image/")) {
+          userContent.push({ type: "text", text: `\nDocument: "${name}"` });
+          userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
+        } else if (mimeType === "application/pdf") {
+          userContent.push({ type: "text", text: `\nPDF document: "${name}"` });
+          userContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } });
+        } else {
+          try {
+            const decoded = atob(base64);
+            userContent.push({ type: "text", text: `\nDocument "${name}":\n${decoded.slice(0, 10000)}` });
+          } catch {
+            console.warn(`Could not decode file ${name}`);
+          }
         }
       }
     }
@@ -112,7 +158,7 @@ serve(async (req) => {
       {
         functionName: "extract-case-fields",
         bypassReason: "multimodal",
-        timeoutMs: 45000,
+        timeoutMs: 60000,
       }
     );
 
@@ -133,7 +179,7 @@ serve(async (req) => {
       );
     }
 
-    // Normalize court_name to match known courts
+    // Normalize court_name
     if (extracted.court_name) {
       const courtLower = extracted.court_name.toLowerCase();
       for (const [key, value] of Object.entries(COURTS_MAP)) {
