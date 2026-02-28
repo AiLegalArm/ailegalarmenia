@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { stripMarkdown } from "./strip-markdown";
 import { registerArmenianFont, setArmenianFont, containsArmenian, containsCyrillic } from "./pdf/fontLoader";
 import { loadLogoForPDF, addLogoToPage } from "./pdf/logoLoader";
 
@@ -201,9 +202,10 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
   // Content
   doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
-  selectFont(doc, data.content, hasArmenianFont);
+  const cleanContent = stripMarkdown(data.content);
+  selectFont(doc, cleanContent, hasArmenianFont);
   
-  const contentLines = doc.splitTextToSize(data.content, maxWidth);
+  const contentLines = doc.splitTextToSize(cleanContent, maxWidth);
   
   for (const line of contentLines) {
     if (yPosition > pageHeight - contentBottomMargin) {
