@@ -4,30 +4,34 @@ import { FIELD_EXTRACTION, buildModelParams } from "../_shared/model-config.ts";
 import { handleCors } from "../_shared/edge-security.ts";
 
 const SYSTEM_PROMPT = [
-  "Ты — юридический аналитик по делам Республики Армения.",
+  "\u0534\u0578\u0582 AI LEGAL ARMENIA \u056B\u0580\u0561\u057E\u0561\u056F\u0561\u0576 \u057E\u0565\u0580\u056C\u0578\u0582\u056E\u0561\u0562\u0561\u0576 \u0565\u057D \u0540\u0561\u0575\u0561\u057D\u057F\u0561\u0576\u056B \u0540\u0561\u0576\u0580\u0561\u057A\u0565\u057F\u0578\u0582\u0569\u0575\u0561\u0576 \u0563\u0578\u0580\u056E\u0565\u0580\u056B \u0570\u0561\u0574\u0561\u0580\u055D",
   "",
-  "Тебе передан агрегированный текст дела (все файлы + OCR).",
-  "Документы могут охватывать несколько стадий процесса.",
+  "\u0554\u0565\u0566 \u0576\u0565\u0580\u056F\u0561\u0575\u0561\u0581\u057E\u0561\u056E \u0567 \u0563\u0578\u0580\u056E\u056B \u0561\u0563\u0580\u0565\u0563\u0561\u0581\u057E\u0561\u056E \u057F\u0565\u0584\u057D\u057F\u0568 (\u0562\u0578\u056C\u0578\u0580 \u0586\u0561\u0575\u056C\u0565\u0580\u0568 + OCR)\u055D",
+  "\u0553\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580\u0568 \u056F\u0561\u0580\u0578\u0572 \u0565\u0576 \u0568\u0576\u0564\u0563\u0580\u056F\u0565\u056C \u0574\u056B \u0584\u0561\u0576\u056B \u0564\u0561\u057F\u0561\u057E\u0561\u0580\u0561\u056F\u0561\u0576 \u0583\u0578\u0582\u056C\u0565\u0580\u055D",
   "",
-  "СТРОГИЕ ПРАВИЛА:",
+  "\u053D\u053B\u054D\u054F \u053F\u0531\u0546\u0548\u0546\u0546\u0535\u0550\u055D",
   "",
-  "1) Не выдумывай — извлекай только то, что есть в материалах.",
-  "2) Если данных недостаточно — прямо укажи: «[\u0532\u0531\u0551\u0531\u053f\u0531\u0545\u0548\u0552\u0544 \u0538 — \u0561\u0576\u0570\u0580\u0561\u056b\u0565\u0577\u057f \u0567 \u0571\u0565\u057c\u0584 \u0562\u0565\u0580\u0565\u056c]».",
-  "3) PII (\u0430\u0434\u0440\u0435\u0441\u0430, \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u044b, \u043f\u0430\u0441\u043f\u043e\u0440\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435) \u043c\u0430\u0441\u043a\u0438\u0440\u0443\u0439 \"***\".",
+  "1) \u0549\u0570\u0578\u0580\u056B\u0576\u0565\u056C \u2014 \u0570\u0561\u0576\u0565\u056C \u0574\u056B\u0561\u0575\u0576 \u0561\u0575\u0576, \u056B\u0576\u0579 \u056F\u0561 \u0576\u0575\u0578\u0582\u0569\u0565\u0580\u0578\u0582\u0574\u055D",
+  "2) \u0535\u0569\u0565 \u057F\u057E\u0575\u0561\u056C\u0576\u0565\u0580\u0568 \u0562\u0561\u057E\u0561\u0580\u0561\u0580 \u0579\u0565\u0576 \u2014 \u0576\u0577\u0565\u056C\u055D \u00AB[\u0532\u0531\u0551\u0531\u053F\u0531\u0545\u0548\u0552\u0544 \u0537 \u2014 \u0561\u0576\u0570\u0580\u0561\u056B\u0565\u0577\u057F \u0567 \u0571\u0565\u057C\u0584 \u0562\u0565\u0580\u0565\u056C]\u00BB\u055D",
+  "3) PII (\u0570\u0561\u057D\u0581\u0565\u0576\u0565\u0580, \u0570\u0565\u057C\u0561\u056D\u0578\u057D\u0576\u0565\u0580, \u0561\u0576\u0571\u0576\u0561\u0563\u0580\u0565\u0580\u056B \u057F\u057E\u0575\u0561\u056C\u0576\u0565\u0580) \u0564\u056B\u0574\u0561\u056F\u0561\u057E\u0578\u0580\u0565\u056C \"***\"\u055D",
+  "4) \u054A\u0531\u054F\u0531\u054D\u053D\u0531\u0546\u0538 \u054A\u053B\u054F\u053B \u053C\u053B\u0546\u053B \u0540\u0531\u0545\u0535\u0550\u0535\u0546\u054A\u053F\u055D",
   "",
-  "facts — \u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0439 \u0442\u0435\u043a\u0441\u0442 10\u201325 \u043f\u0443\u043d\u043a\u0442\u043e\u0432:",
+  "facts \u2014 \u056F\u0561\u057C\u0578\u0582\u0581\u057E\u0561\u056E\u0584\u0561\u0575\u056B\u0576 \u057F\u0565\u0584\u057D\u057F 10\u201425 \u056F\u0565\u057F\u0565\u0580\u0578\u057E\u055D",
   "",
-  "1) \u0423\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u0438 (\u0438\u043c\u0435\u043d\u0430 \u043c\u0430\u0441\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u044b \u043f\u0440\u0438 \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u0438)",
-  "2) \u0425\u0440\u043e\u043d\u043e\u043b\u043e\u0433\u0438\u044f \u0441 \u0434\u0430\u0442\u0430\u043c\u0438",
-  "3) \u041f\u0440\u043e\u0446\u0435\u0441\u0441\u0443\u0430\u043b\u044c\u043d\u044b\u0435 \u0440\u0435\u0448\u0435\u043d\u0438\u044f (1 \u0438\u043d\u0441\u0442\u0430\u043d\u0446\u0438\u044f \u2192 \u0430\u043f\u0435\u043b\u043b\u044f\u0446\u0438\u044f \u2192 \u043a\u0430\u0441\u0441\u0430\u0446\u0438\u044f)",
-  "4) \u0427\u0442\u043e \u043e\u0431\u0436\u0430\u043b\u0443\u0435\u0442\u0441\u044f",
-  "5) \u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0441\u0442\u0430\u0434\u0438\u044f (\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0438 \u043f\u043e \u043f\u0440\u0430\u0432\u0438\u043b\u0443 \"\u0441\u0430\u043c\u0430\u044f \u043f\u043e\u0437\u0434\u043d\u044f\u044f \u0434\u0430\u0442\u0430\")",
+  "1) \u0534\u0565\u056C\u0568 (\u0561\u0576\u057E\u0561\u0576\u0578\u0582\u0574, \u057F\u0565\u057D\u0561\u056F, \u0564\u0561\u057F\u0561\u0580\u0561\u0576, \u0570\u0561\u0574\u0561\u0580)",
+  "2) \u0544\u0561\u057D\u0576\u0561\u056F\u056B\u0581\u0576\u0565\u0580\u0568 (\u0570\u0561\u0575\u0581\u057E\u0578\u0580, \u057A\u0561\u057F\u0561\u057D\u056D\u0561\u0576\u0578\u0572, \u0576\u0565\u0580\u056F\u0561\u0575\u0561\u0581\u0578\u0582\u0581\u056B\u0579\u0576\u0565\u0580)",
+  "3) \u054E\u0565\u0573\u056B \u0561\u057C\u0561\u0580\u056F\u0561\u0576",
+  "4) \u0553\u0561\u057D\u057F\u0561\u056F\u0561\u0576 \u0570\u0561\u0576\u0563\u0561\u0574\u0561\u0576\u0584\u0576\u0565\u0580\u0568 \u0568\u057D\u057F \u0567\u0578\u0582\u0569\u0575\u0561\u0576",
+  "5) \u053A\u0561\u0574\u0561\u0576\u0561\u0563\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576 \u0569\u057E\u0561\u056F\u0561\u0576\u0576\u0565\u0580\u0578\u057E (1-\u056B\u0576 \u0561\u057F\u0575\u0561\u0576 \u2192 \u057E\u0565\u0580\u0561\u0584\u0576\u0576\u056B\u0579 \u2192 \u057E\u0573\u057C\u0561\u0562\u0565\u056F)",
+  "6) \u053B\u0576\u0579 \u0567 \u0562\u0578\u0572\u0578\u0584\u0561\u0580\u056F\u057E\u0578\u0582\u0574",
+  "7) \u0538\u0576\u0569\u0561\u0581\u056B\u056F \u0583\u0578\u0582\u056C\u0568 (\u0578\u0580\u0578\u0577\u0565\u056C \u0568\u057D\u057F \u056F\u0561\u0576\u0578\u0576\u056B \u00AB\u0561\u0574\u0565\u0576\u0561\u0578\u0582\u0577 \u057F\u0561\u0580\u057E\u0561\u0576 \u0569\u057E\u0561\u056F\u0561\u0576\u0568\u00BB)",
   "",
-  "\u0415\u0441\u043b\u0438 \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b \u043e\u0445\u0432\u0430\u0442\u044b\u0432\u0430\u044e\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0441\u0442\u0430\u0434\u0438\u0439 — \u044f\u0432\u043d\u043e \u043f\u0435\u0440\u0435\u0447\u0438\u0441\u043b\u0438 \u0438\u0445.",
+  "\u0535\u0569\u0565 \u0576\u0575\u0578\u0582\u0569\u0565\u0580\u0568 \u0568\u0576\u0564\u0563\u0580\u056F\u0578\u0582\u0574 \u0565\u0576 \u0574\u056B \u0584\u0561\u0576\u056B \u0583\u0578\u0582\u056C\u0565\u0580 \u2014 \u0570\u057D\u057F\u0561\u056F\u0578\u0580\u0565\u0576 \u0569\u057E\u0561\u0580\u056F\u0565\u056C \u0564\u0580\u0561\u0576\u0584\u055D",
   "",
-  "legal_question — 1\u20133 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f.",
-  "\u0413\u043b\u0430\u0432\u043d\u044b\u0439 \u044e\u0440\u0438\u0434\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0432\u043e\u043f\u0440\u043e\u0441, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0440\u0430\u0441\u0441\u043c\u0430\u0442\u0440\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u043d\u0430 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0441\u0442\u0430\u0434\u0438\u0438.",
+  "legal_question \u2014 1\u20143 \u0576\u0561\u056D\u0561\u0564\u0561\u057D\u0578\u0582\u0569\u0575\u0578\u0582\u0576\u055D",
+  "\u0533\u056C\u056D\u0561\u057E\u0578\u0580 \u056B\u0580\u0561\u057E\u0561\u056F\u0561\u0576 \u0570\u0561\u0580\u0581\u0568, \u0578\u0580\u0568 \u0584\u0576\u0576\u057E\u0578\u0582\u0574 \u0567 \u0568\u0576\u0569\u0561\u0581\u056B\u056F \u0583\u0578\u0582\u056C\u0578\u0582\u0574\u055D",
 ].join("\n");
+
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors.errorResponse) return cors.errorResponse;
@@ -85,14 +89,21 @@ serve(async (req) => {
       .eq("case_files.case_id", caseId)
       .limit(5);
 
-    // Get uploaded case files (PDFs)
+    // Get uploaded case files — include DOCX alongside PDF/images
+    const SUPPORTED_FILE_TYPES = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/jpg",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
     const { data: caseFiles } = await supabase
       .from("case_files")
       .select("id, original_filename, storage_path, file_type")
       .eq("case_id", caseId)
       .is("deleted_at", null)
-      .in("file_type", ["application/pdf", "image/jpeg", "image/png", "image/jpg"])
-      .limit(3);
+      .in("file_type", SUPPORTED_FILE_TYPES)
+      .limit(5);
 
     // Build text context — always include available case metadata
     let context = "";
@@ -133,16 +144,17 @@ serve(async (req) => {
     if (context.trim()) {
       userMessageContent.push({
         type: "text",
-        text: `Проанализируй следующие материалы дела и извлеки facts и legal_question.\n\n<<<CASE_START>>>\n${context}\n<<<CASE_END>>>`
+        text: `\u054E\u0565\u0580\u056C\u0578\u0582\u056E\u056B\u0580 \u0570\u0565\u057F\u0587\u0575\u0561\u056C \u0563\u0578\u0580\u056E\u056B \u0576\u0575\u0578\u0582\u0569\u0565\u0580\u0568 \u0587 \u0570\u0561\u0576\u056B\u0580 facts \u0587 legal_question\u055D\n\n<<<CASE_START>>>\n${context}\n<<<CASE_END>>>`
       });
     }
 
-    // If we have uploaded PDF/image files and no text context, download and send them
+    // Process uploaded files (PDF, image, DOCX)
     const hasTextContext = context.trim().length > 0;
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     const IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+    const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     if (caseFiles && caseFiles.length > 0) {
       for (const file of caseFiles) {
@@ -150,15 +162,50 @@ serve(async (req) => {
           const mimeType = file.file_type || "";
           const isImage = IMAGE_MIME_TYPES.includes(mimeType);
           const isPdf = mimeType === "application/pdf";
+          const isDocx = mimeType === DOCX_MIME;
 
-          // PDFs cannot be sent as image_url — mention them in text context instead
-          if (isPdf) {
-            console.log(`PDF file noted (cannot send as image): ${file.original_filename}`);
-            context += `\n\n=== UPLOADED PDF FILE ===\nFilename: ${file.original_filename}\n(PDF content — extract information from the case metadata and OCR results above)`;
+          // === DOCX: parse and inject text ===
+          if (isDocx) {
+            console.log(`Downloading DOCX from storage: ${file.storage_path}`);
+            const { data: fileData, error: downloadError } = await supabase.storage
+              .from("case-files")
+              .download(file.storage_path);
+
+            if (downloadError || !fileData) {
+              console.warn(`Failed to download DOCX ${file.storage_path}: ${downloadError?.message}`);
+              continue;
+            }
+
+            const arrayBuffer = await fileData.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            console.log(`DOCX downloaded: ${bytes.length} bytes`);
+
+            try {
+              const { parseDocx } = await import("../_shared/docx-parser.ts");
+              const docxText = await parseDocx(bytes);
+              const trimmed = docxText.substring(0, 12000);
+              console.log(`DOCX parsed: ${trimmed.length} chars from ${file.original_filename}`);
+
+              context += `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${trimmed}`;
+              userMessageContent.push({
+                type: "text",
+                text: `\n\n=== DOCX DOCUMENT: ${file.original_filename} ===\n${trimmed}`
+              });
+            } catch (parseErr) {
+              console.warn(`DOCX parse error for ${file.original_filename}:`, parseErr);
+              context += `\n\n=== DOCX FILE (parse failed) ===\nFilename: ${file.original_filename}`;
+            }
             continue;
           }
 
-          // Only process actual image files
+          // === PDF: note in context (cannot send as image_url) ===
+          if (isPdf) {
+            console.log(`PDF file noted (cannot send as image): ${file.original_filename}`);
+            context += `\n\n=== UPLOADED PDF FILE ===\nFilename: ${file.original_filename}\n(PDF content \u2014 extract information from the case metadata and OCR results above)`;
+            continue;
+          }
+
+          // === Images: send as vision ===
           if (!isImage) {
             console.warn(`Unsupported file type ${mimeType} for ${file.original_filename}, skipping`);
             continue;
@@ -166,7 +213,6 @@ serve(async (req) => {
 
           console.log(`Downloading image from storage: ${file.storage_path}`);
           
-          // Download file from Supabase storage
           const { data: fileData, error: downloadError } = await supabase.storage
             .from("case-files")
             .download(file.storage_path);
@@ -184,7 +230,6 @@ serve(async (req) => {
             continue;
           }
 
-          // Convert to base64
           const { uint8ToBase64 } = await import("../_shared/base64.ts");
           const base64 = uint8ToBase64(bytes);
           const dataUrl = `data:${mimeType};base64,${base64}`;
@@ -194,12 +239,12 @@ serve(async (req) => {
           if (!hasTextContext && userMessageContent.length === 0) {
             userMessageContent.push({
               type: "text",
-              text: `Проанализируй это изображение и извлеки facts и legal_question: "${file.original_filename}"`
+              text: `\u054E\u0565\u0580\u056C\u0578\u0582\u056E\u056B\u0580 \u0561\u0575\u057D \u057A\u0561\u057F\u056F\u0565\u0580\u0568 \u0587 \u0570\u0561\u0576\u056B\u0580 facts \u0587 legal_question: "${file.original_filename}"`
             });
           } else {
             userMessageContent.push({
               type: "text",
-              text: `\n[Изображение: "${file.original_filename}"]`
+              text: `\n[\u054A\u0561\u057F\u056F\u0565\u0580: "${file.original_filename}"]`
             });
           }
 
@@ -218,7 +263,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "No data available for extraction. Please add a case description or upload PDF/image documents first."
+          error: "No data available for extraction. Please add a case description or upload PDF/image/DOCX documents first."
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -237,32 +282,32 @@ serve(async (req) => {
       {
         functionName: "extract-case-fields",
         bypassReason: "tool_calling",
-        timeoutMs: 60000,
+        timeoutMs: 120000,
         extraBody: {
           tools: [
             {
               type: "function",
               function: {
                 name: "extract_case_fields",
-                description: "Извлечь facts и legal_question из материалов дела",
+                description: "\u0540\u0561\u0576\u0565\u056C facts \u0587 legal_question \u0563\u0578\u0580\u056E\u056B \u0576\u0575\u0578\u0582\u0569\u0565\u0580\u056B\u0581 (\u0570\u0561\u0575\u0565\u0580\u0565\u0576\u0578\u057E)",
                 parameters: {
                   type: "object",
                   properties: {
                     case_number: {
                       type: "string",
-                      description: "Номер дела как указан в документах. Пустая строка если не найден."
+                      description: "\u0533\u0578\u0580\u056E\u056B \u0570\u0561\u0574\u0561\u0580\u0568, \u056B\u0576\u0579\u057A\u0565\u057D \u0576\u0577\u057E\u0561\u056E \u0567 \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580\u0578\u0582\u0574\u055D \u0534\u0561\u057F\u0561\u0580\u056F \u057F\u0578\u0572 \u0565\u0569\u0565 \u0579\u056B \u0563\u057F\u0576\u057E\u0565\u056C\u055D"
                     },
                     description: {
                       type: "string",
-                      description: "Краткое описание дела 3-5 предложений: предмет, стороны, суд, стадия."
+                      description: "\u0533\u0578\u0580\u056E\u056B \u0570\u0561\u0574\u0561\u057C\u0578\u057F \u0576\u056F\u0561\u0580\u0561\u0563\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576\u0568 3\u20145 \u0576\u0561\u056D\u0561\u0564\u0561\u057D\u0578\u0582\u0569\u0575\u0561\u0574\u0562\u055D \u0561\u057C\u0561\u0580\u056F\u0561, \u056F\u0578\u0572\u0574\u0565\u0580, \u0564\u0561\u057F\u0561\u0580\u0561\u0576, \u0583\u0578\u0582\u056C\u055D \u0540\u0531\u0545\u0535\u0550\u0535\u0546\u054A\u053F\u055D"
                     },
                     facts: {
                       type: "string",
-                      description: "Структурированный текст 10-25 пунктов: участники, хронология, процессуальные решения по стадиям, что обжалуется, текущая стадия."
+                      description: "\u053F\u0561\u057C\u0578\u0582\u0581\u057E\u0561\u056E\u0584\u0561\u0575\u056B\u0576 \u057F\u0565\u0584\u057D\u057F 10\u201425 \u056F\u0565\u057F\u0565\u0580\u0578\u057E\u055D \u0574\u0561\u057D\u0576\u0561\u056F\u056B\u0581\u0576\u0565\u0580, \u056A\u0561\u0574\u0561\u0576\u0561\u0563\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576, \u0564\u0561\u057F\u0561\u057E\u0561\u0580\u0561\u056F\u0561\u0576 \u0578\u0580\u0578\u0577\u0578\u0582\u0574\u0576\u0565\u0580 \u0568\u057D\u057F \u0583\u0578\u0582\u056C\u0565\u0580\u056B, \u056B\u0576\u0579 \u0567 \u0562\u0578\u0572\u0578\u0584\u0561\u0580\u056F\u057E\u0578\u0582\u0574, \u0568\u0576\u0569\u0561\u0581\u056B\u056F \u0583\u0578\u0582\u056C\u0568\u055D \u0540\u0531\u0545\u0535\u0550\u0535\u0546\u054A\u053F\u055D"
                     },
                     legal_question: {
                       type: "string",
-                      description: "1-3 предложения: главный юридический вопрос на текущей стадии."
+                      description: "1\u20143 \u0576\u0561\u056D\u0561\u0564\u0561\u057D\u0578\u0582\u0569\u0575\u0578\u0582\u0576\u055D \u0563\u056C\u056D\u0561\u057E\u0578\u0580 \u056B\u0580\u0561\u057E\u0561\u056F\u0561\u0576 \u0570\u0561\u0580\u0581\u0568 \u0568\u0576\u0569\u0561\u0581\u056B\u056F \u0583\u0578\u0582\u056C\u0578\u0582\u0574\u055D \u0540\u0531\u0545\u0535\u0550\u0535\u0546\u054A\u053F\u055D"
                     }
                   },
                   required: ["case_number", "description", "facts", "legal_question"]
@@ -293,7 +338,6 @@ serve(async (req) => {
     if (!extractedFields && message?.content) {
       const raw = (message.content as string).trim();
       try {
-        // Strip markdown fences if present
         const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
         const parsed = JSON.parse(cleaned);
         if (parsed && typeof parsed.case_number !== "undefined") {
