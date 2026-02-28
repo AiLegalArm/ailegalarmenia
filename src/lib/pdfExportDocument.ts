@@ -200,10 +200,10 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
   yPosition += 10;
   
   // Content
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setTextColor(0, 0, 0);
   const cleanContent = stripMarkdown(data.content);
-  selectFont(doc, cleanContent, hasArmenianFont);
+  selectBoldFont(doc, cleanContent, hasArmenianFont);
   
   const contentLines = doc.splitTextToSize(cleanContent, maxWidth);
   
