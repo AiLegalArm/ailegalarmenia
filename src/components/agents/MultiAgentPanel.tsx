@@ -9,7 +9,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Play, FileStack, ClipboardList, FileText, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Play, FileStack, ClipboardList, FileText, CheckCircle2, XCircle, AlertCircle, Zap, Clock } from "lucide-react";
 import { useMultiAgentAnalysis } from "@/hooks/useMultiAgentAnalysis";
 import { AGENT_CONFIGS, type AgentType, type AgentRunStatus } from "./types";
 import { VolumeManager } from "./VolumeManager";
@@ -62,6 +63,7 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
   const [activeTab, setActiveTab] = useState("volumes");
   const [selectedRole, setSelectedRole] = useState(partyRole || "");
   const [selectedAgents, setSelectedAgents] = useState<Set<AgentType>>(new Set());
+  const [skipCached, setSkipCached] = useState(true);
 
   const toggleAgent = (agentType: AgentType) => {
     setSelectedAgents(prev => {
@@ -170,13 +172,30 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
               </Select>
             </div>
 
+            {/* Speed & Cache options */}
+            <div className="flex items-center gap-4 pt-1">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="skip-cached"
+                  checked={skipCached}
+                  onCheckedChange={setSkipCached}
+                  className="h-4 w-7"
+                />
+                <label htmlFor="skip-cached" className="text-[10px] sm:text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {t("ai:skip_cached")}
+                </label>
+              </div>
+            </div>
+
             {/* Action Buttons - Stack vertically on mobile */}
             <div className="flex flex-col sm:flex-row gap-2 w-full pt-1">
               <Button
                 onClick={() => runAllAgents(
                   caseId,
                   referencesText || undefined,
-                  selectedAgents.size > 0 ? Array.from(selectedAgents) : undefined
+                  selectedAgents.size > 0 ? Array.from(selectedAgents) : undefined,
+                  { skipCached }
                 )}
                 disabled={isLoading || volumes.length === 0}
                 size="sm"
@@ -186,12 +205,13 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <>
-                    <Play className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                    <Zap className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                     <span className="truncate">
                       {selectedAgents.size > 0 && selectedAgents.size < AGENT_CONFIGS.length
                         ? `${t("ai:run_all_agents")} (${selectedAgents.size})`
                         : t("ai:run_all_agents")}
                     </span>
+                    <Badge variant="secondary" className="ml-1 text-[8px] px-1 h-3.5">⚡</Badge>
                   </>
                 )}
               </Button>
