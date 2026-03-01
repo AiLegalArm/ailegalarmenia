@@ -70,10 +70,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "File analysis (GPT-5)",
   },
   "generate-document": {
-    model: "openai/gpt-5-mini",
+    model: "openai/gpt-5",
     temperature: 0.2,
     max_tokens: 10000,
-    description: "Documents (GPT-5-mini)",
+    description: "Documents (GPT-5)",
   },
 
   // ── Strict JSON (Gemini Pro) ──────────────────────────────────────────────
@@ -111,10 +111,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "Enrich practice (Gemini Flash)",
   },
   "vector-search-rerank": {
-    model: "google/gemini-2.5-flash-lite",
+    model: "google/gemini-2.5-flash",
     temperature: 0.1,
     max_tokens: 1000,
-    description: "Rerank (Flash-lite)",
+    description: "Rerank (Gemini Flash)",
   },
 
   // ── Bypass-only utilities (still in MODEL_MAP to prevent model drift) ─────
@@ -137,16 +137,16 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "KB fetch PDF (Gemini Flash, bypass:multimodal)",
   },
   "legal-practice-import": {
-    model: "google/gemini-2.5-flash-lite",
+    model: "google/gemini-2.5-flash",
     temperature: 0,
     max_tokens: 8000,
-    description: "Practice import extract (Flash-lite, bypass:json_extract)",
+    description: "Practice import extract (Gemini Flash, bypass:json_extract)",
   },
   "prompt-armor-repair": {
-    model: "google/gemini-2.5-flash-lite",
+    model: "google/gemini-2.5-flash",
     temperature: 0,
     max_tokens: 8000,
-    description: "JSON repair (Flash-lite, bypass:repair)",
+    description: "JSON repair (Gemini Flash, bypass:repair)",
   },
 
   // ── Embeddings (OpenAI only) ──────────────────────────────────────────────
@@ -179,6 +179,14 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     temperature: 0.1,
     max_tokens: 4000,
     description: "Map-Reduce chunk summarizer (Gemini Flash, cheap)",
+  },
+
+  // ── Translation ───────────────────────────────────────────────────────
+  "translate-to-armenian": {
+    model: "google/gemini-2.5-flash",
+    temperature: 0.1,
+    max_tokens: 4096,
+    description: "Legal translation to Armenian (Gemini Flash)",
   },
 };
 

@@ -28,11 +28,12 @@ export interface ModelConfig {
  * USES: anthropic/claude-3.7-sonnet via Lovable AI Gateway
  */
 export const LEGAL_DETERMINISTIC: ModelConfig = {
-  model: "anthropic/claude-3.7-sonnet",
-  temperature: 0.1,
+  model: "openai/gpt-5",
+  temperature: 0.2,
   max_tokens: 16384,
   top_p: 0.92,
-  description: "Legal analysis with deterministic output (temp=0.1, Claude 3.7 Sonnet)",
+  frequency_penalty: 1.2,
+  description: "Legal analysis with deterministic output (temp=0.2, GPT-5)",
 };
 
 /**
@@ -40,10 +41,10 @@ export const LEGAL_DETERMINISTIC: ModelConfig = {
  * USES: anthropic/claude-3.7-sonnet via Lovable AI Gateway
  */
 export const LEGAL_CHAT: ModelConfig = {
-  model: "anthropic/claude-3.7-sonnet",
-  temperature: 0.1,
+  model: "openai/gpt-5",
+  temperature: 0.2,
   max_tokens: 16000,
-  description: "Legal chat (temp=0.1, Claude 3.7 Sonnet)",
+  description: "Legal chat (temp=0.2, GPT-5)",
 };
 
 /**
@@ -51,10 +52,10 @@ export const LEGAL_CHAT: ModelConfig = {
  * USES: google/gemini-2.5-flash via Lovable AI Gateway
  */
 export const DOCUMENT_GENERATION: ModelConfig = {
-  model: "google/gemini-2.5-flash",
+  model: "openai/gpt-5",
   temperature: 0.2,
   max_tokens: 10000,
-  description: "Document generation (temp=0.2, Gemini 2.5 Flash)",
+  description: "Document generation (temp=0.2, GPT-5)",
 };
 
 /**
@@ -62,10 +63,10 @@ export const DOCUMENT_GENERATION: ModelConfig = {
  * USES: anthropic/claude-3.7-sonnet via Lovable AI Gateway
  */
 export const COMPLAINT_GENERATION: ModelConfig = {
-  model: "anthropic/claude-3.7-sonnet",
+  model: "openai/gpt-5",
   temperature: 0.1,
   max_tokens: 12000,
-  description: "Complaint generation (temp=0.1, Claude 3.7 Sonnet)",
+  description: "Complaint generation (temp=0.1, GPT-5)",
 };
 
 /**
@@ -96,10 +97,10 @@ export const AUDIO_TRANSCRIPTION: ModelConfig = {
  * USES: anthropic/claude-3.7-sonnet via Lovable AI Gateway
  */
 export const MULTI_AGENT_ANALYSIS: ModelConfig = {
-  model: "anthropic/claude-3.7-sonnet",
+  model: "openai/gpt-5",
   temperature: 0.1,
   max_tokens: 16384,
-  description: "Multi-agent legal analysis (temp=0.1, Claude 3.7 Sonnet)",
+  description: "Multi-agent legal analysis (temp=0.1, GPT-5)",
 };
 
 /**
@@ -107,10 +108,10 @@ export const MULTI_AGENT_ANALYSIS: ModelConfig = {
  * USES: anthropic/claude-3.7-sonnet via Lovable AI Gateway
  */
 export const FILE_ANALYSIS: ModelConfig = {
-  model: "anthropic/claude-3.7-sonnet",
+  model: "openai/gpt-5",
   temperature: 0.1,
   max_tokens: 16384,
-  description: "File analysis for complaints (temp=0.1, Claude 3.7 Sonnet)",
+  description: "File analysis for complaints (temp=0.1, GPT-5)",
 };
 
 /**
@@ -118,10 +119,10 @@ export const FILE_ANALYSIS: ModelConfig = {
  * USES: openai/gpt-5 for deep legal analysis
  */
 export const FIELD_EXTRACTION: ModelConfig = {
-  model: "openai/gpt-5",
+  model: "google/gemini-2.5-flash",
   max_tokens: 16000,
-  temperature: 0.3,
-  description: "Case field extraction — JSON output (GPT-5, deep legal analysis)",
+  temperature: 0.1,
+  description: "Case field extraction — JSON output (Gemini Flash)",
 };
 
 /**
@@ -129,10 +130,10 @@ export const FIELD_EXTRACTION: ModelConfig = {
  * USES: google/gemini-2.5-pro via Lovable AI Gateway
  */
 export const KEYWORD_EXTRACTION: ModelConfig = {
-  model: "google/gemini-2.5-pro",
+  model: "google/gemini-2.5-flash-lite",
   temperature: 0.2,
   max_tokens: 200,
-  description: "Keyword extraction — JSON output (temp=0.2, Gemini 2.5 Pro)",
+  description: "Keyword extraction — JSON output (temp=0.2, Gemini Flash Lite)",
 };
 
 /**
@@ -215,10 +216,10 @@ export function validateProfiles(): string[] {
         `${name}: temperature ${p.temperature} exceeds legal max ${LEGAL_MAX_TEMP}`
       );
     }
-    // Block openai/* models
-    if (p.model.startsWith("openai/")) {
+    // Block unknown model prefixes (only openai/ and google/ allowed)
+    if (!p.model.startsWith("openai/") && !p.model.startsWith("google/")) {
       violations.push(
-        `${name}: openai/* models are forbidden, found ${p.model}`
+        `${name}: unknown model prefix, found ${p.model}`
       );
     }
   }
