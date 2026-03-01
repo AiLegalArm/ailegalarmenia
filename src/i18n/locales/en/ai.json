@@ -137,5 +137,7 @@
   "regenerate": "Regenerate",
   "save_to_documents": "Save to documents",
   "document_saved": "Document saved",
-  "chat_bubble_hint": "Ask Legal AI"
+  "chat_bubble_hint": "Ask Legal AI",
+  "select_all": "Select all",
+  "deselect_all": "Deselect all"
 }
