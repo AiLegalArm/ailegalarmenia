@@ -317,11 +317,10 @@ export function CaseAIAnalysisPanel({
       
       <Card className="overflow-hidden w-full min-w-0">
         <CardHeader className="p-3 sm:p-6">
-          <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
-            <span className="text-base sm:text-lg">{t('ai:analyze')}</span>
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              <Button variant="outline" size="sm" onClick={onOpenComplaintGenerator} className="h-10 rounded-xl text-mobile-sm sm:text-sm">
-                <FileSignature className="mr-2 h-4 w-4 shrink-0" />
+          <CardTitle className="text-base sm:text-lg mb-3">{t('ai:analyze')}</CardTitle>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              <Button variant="outline" size="sm" onClick={onOpenComplaintGenerator} className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start">
+                <FileSignature className="mr-1.5 h-4 w-4 shrink-0" />
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u0532\u0578\u0572\u0578\u0584' : i18n.language === 'en' ? 'Complaint' : '\u0416\u0430\u043B\u043E\u0431\u0430'}
                 </span>
@@ -338,12 +337,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsPrecedentLoading(false); }
                 })}
                 disabled={isPrecedentLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isPrecedentLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <Scale className="mr-2 h-4 w-4 shrink-0" />
+                  <Scale className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u0546\u0561\u056D\u0561\u0564\u0565\u057A\u0565\u0580' : i18n.language === 'en' ? 'Precedents' : '\u041F\u0440\u0435\u0446\u0435\u0434\u0435\u043D\u0442\u044B'}
@@ -360,12 +359,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsDeadlineLoading(false); }
                 })}
                 disabled={isDeadlineLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isDeadlineLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <Timer className="mr-2 h-4 w-4 shrink-0" />
+                  <Timer className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u053a\u0561\u0574\u056F\u0565\u057F\u0576\u0565\u0580' : i18n.language === 'en' ? 'Deadlines' : '\u0421\u0440\u043E\u043A\u0438'}
@@ -382,12 +381,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsComparatorLoading(false); }
                 })}
                 disabled={isComparatorLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isComparatorLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <GitCompare className="mr-2 h-4 w-4 shrink-0" />
+                  <GitCompare className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u0540\u0561\u0574\u0561\u0564\u0580\u0578\u0582\u0574' : i18n.language === 'en' ? 'Compare' : '\u0421\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435'}
@@ -404,12 +403,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsAuditLoading(false); }
                 })}
                 disabled={isAuditLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isAuditLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <ShieldCheck className="mr-2 h-4 w-4 shrink-0" />
+                  <ShieldCheck className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u054D\u057F\u0578\u0582\u0563\u0578\u0582\u0574' : i18n.language === 'en' ? 'Audit' : '\u0410\u0443\u0434\u0438\u057F'}
@@ -426,12 +425,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsDraftLoading(false); }
                 })}
                 disabled={isDraftLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isDraftLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <FileText className="mr-2 h-4 w-4 shrink-0" />
+                  <FileText className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u0546\u0561\u056D\u0561\u0563\u056B\u056E' : i18n.language === 'en' ? 'Draft' : '\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A'}
@@ -448,12 +447,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsStrategyLoading(false); }
                 })}
                 disabled={isStrategyLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isStrategyLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <Target className="mr-2 h-4 w-4 shrink-0" />
+                  <Target className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u054C\u0561\u0566\u0574\u0561\u057E\u0561\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576' : i18n.language === 'en' ? 'Strategy' : '\u0421\u0442\u0440\u0430\u0442\u0435\u0433\u0438\u044F'}
@@ -470,12 +469,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsEvidenceWeaknessLoading(false); }
                 })}
                 disabled={isEvidenceWeaknessLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isEvidenceWeaknessLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <Search className="mr-2 h-4 w-4 shrink-0" />
+                  <Search className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u0539\u0578\u0582\u056C\u0578\u0582\u0569\u0575\u0578\u0582\u0576\u0576\u0565\u0580' : i18n.language === 'en' ? 'Weaknesses' : '\u0423\u044F\u0437\u0432\u0438\u043C\u043E\u0441\u0442\u0438'}
@@ -492,12 +491,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsRiskFactorsLoading(false); }
                 })}
                 disabled={isRiskFactorsLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isRiskFactorsLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <BarChart3 className="mr-2 h-4 w-4 shrink-0" />
+                  <BarChart3 className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u054C\u056B\u057D\u056F\u0565\u0580' : i18n.language === 'en' ? 'Risks' : '\u0420\u0438\u0441\u043A\u0438'}
@@ -508,15 +507,15 @@ export function CaseAIAnalysisPanel({
                 size="sm" 
                 onClick={() => setShowLawUpdateDialog(true)}
                 disabled={isLawUpdateLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isLawUpdateLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <BookOpen className="mr-2 h-4 w-4 shrink-0" />
+                  <BookOpen className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
-                  {i18n.language === 'hy' ? '\u0555\u0580\u0565\u0576\u0584\u056B \u0583\u0578\u0583\u0578\u056D.' : i18n.language === 'en' ? 'Law Changes' : '\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0437\u0430\u043A\u043E\u043D\u0430'}
+                  {i18n.language === 'hy' ? '\u0555\u0580\u0565\u0576\u0584\u056B \u0583\u0578\u0583\u0578\u056D.' : i18n.language === 'en' ? 'Law Changes' : '\u0418\u0437\u043C. \u0437\u0430\u043A\u043E\u043D\u0430'}
                 </span>
               </Button>
               <Button 
@@ -530,12 +529,12 @@ export function CaseAIAnalysisPanel({
                   } finally { setIsCrossExamLoading(false); }
                 })}
                 disabled={isCrossExamLoading || isAnalyzing || isQueueBusy}
-                className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
               >
                 {isCrossExamLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin shrink-0" />
                 ) : (
-                  <MessageSquareQuote className="mr-2 h-4 w-4 shrink-0" />
+                  <MessageSquareQuote className="mr-1.5 h-4 w-4 shrink-0" />
                 )}
                 <span className="truncate">
                   {i18n.language === 'hy' ? '\u053D\u0561\u0579\u0561\u0571\u0587' : i18n.language === 'en' ? 'Cross-Exam' : '\u041F\u0435\u0440\u0435\u043A\u0440\u0451\u0441\u0442\u043D\u044B\u0439'}
@@ -554,15 +553,14 @@ export function CaseAIAnalysisPanel({
                       clearResults();
                       setSavedAnalysisRoles(new Set());
                     }}
-                    className="h-10 rounded-xl text-mobile-sm sm:text-sm"
+                    className="h-10 rounded-xl text-xs sm:text-sm w-full justify-start"
                   >
                     {t('common:clear', 'Clear')}
                   </Button>
                   <PdfExportButton onClick={handleExportAllAnalyses} />
                 </>
               )}
-            </div>
-          </CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="p-3 sm:p-6 pt-0 sm:pt-0">
           {!Object.values(results).some(r => r !== null) ? (
