@@ -31,6 +31,7 @@ import { DictionaryImport } from "@/components/admin/DictionaryImport";
 import { AIProviderSwitch } from "@/components/admin/AIProviderSwitch";
 import { AdminAIChatBot } from "@/components/admin/AdminAIChatBot";
 import { DataMigration } from "@/components/admin/DataMigration";
+import { DataSyncToLive } from "@/components/admin/DataSyncToLive";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -161,7 +162,8 @@ const AdminPanel = () => {
           </TabsContent>
 
           {/* Data Migration Tab */}
-          <TabsContent value="migration">
+          <TabsContent value="migration" className="space-y-6">
+            <DataSyncToLive />
             <DataMigration />
           </TabsContent>
         </Tabs>
