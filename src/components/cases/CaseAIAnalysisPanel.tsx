@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useAIAnalysis, type AIRole } from '@/hooks/useAIAnalysis';
 import { useToast } from '@/hooks/use-toast';
+import { useBackgroundQueue } from '@/hooks/useBackgroundQueue';
 import { FeedbackStars } from '@/components/FeedbackStars';
 import { PdfExportButton } from '@/components/PdfExportButton';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,8 @@ export function CaseAIAnalysisPanel({
     clearResults,
     loadResults
   } = useAIAnalysis();
+
+  const { enqueue, isProcessing: isQueueBusy } = useBackgroundQueue();
   
   const [enabledRoles, setEnabledRoles] = useState({
     advocate: true,
@@ -186,7 +189,7 @@ export function CaseAIAnalysisPanel({
     }
   }, [caseId, results, user?.id, toast, t]);
 
-  const handleStartAnalysis = async () => {
+  const handleStartAnalysis = () => {
     const canRunAggregator = enabledRoles.advocate && enabledRoles.prosecutor && enabledRoles.judge;
     
     const rolesToRun: AIRole[] = [];
@@ -204,15 +207,34 @@ export function CaseAIAnalysisPanel({
       return;
     }
     
-    // Use per-file analysis for each role sequentially
+    // Enqueue each role as a background task
     for (const role of rolesToRun) {
-      await analyzeCasePerFile(role, caseId, facts || undefined, legalQuestion || '', referencesText);
+      const roleLabel = role === 'advocate' 
+        ? (i18n.language === 'hy' ? '\u054a\u0561\u0577\u057f\u057a\u0561\u0576' : i18n.language === 'en' ? 'Advocate' : '\u0410\u0434\u0432\u043e\u043a\u0430\u0442')
+        : role === 'prosecutor'
+        ? (i18n.language === 'hy' ? '\u0544\u0565\u0572\u0561\u0564\u0580\u0578\u0572' : i18n.language === 'en' ? 'Prosecutor' : '\u041f\u0440\u043e\u043a\u0443\u0440\u043e\u0440')
+        : (i18n.language === 'hy' ? '\u0534\u0561\u057f\u0561\u057e\u0578\u0580' : i18n.language === 'en' ? 'Judge' : '\u0421\u0443\u0434\u044c\u044f');
+      
+      enqueue(
+        `ai-${role}-${caseId}`,
+        `AI: ${roleLabel}`,
+        () => analyzeCasePerFile(role, caseId, facts || undefined, legalQuestion || '', referencesText)
+      );
     }
     
-    // Run aggregator if all 3 roles completed
-    if (canRunAggregator && results.advocate && results.prosecutor && results.judge) {
-      await analyzeCase('aggregator', caseId, facts || undefined, legalQuestion || '', referencesText);
+    // Enqueue aggregator if all 3 roles selected
+    if (canRunAggregator) {
+      enqueue(
+        `ai-aggregator-${caseId}`,
+        `AI: ${i18n.language === 'hy' ? '\u0540\u0561\u0574\u0561\u0570\u0561\u057e\u0561\u0584' : i18n.language === 'en' ? 'Aggregator' : '\u0410\u0433\u0440\u0435\u0433\u0430\u0442\u043e\u0440'}`,
+        () => analyzeCase('aggregator', caseId, facts || undefined, legalQuestion || '', referencesText)
+      );
     }
+  };
+
+  // Helper to enqueue individual analysis functions
+  const enqueueAnalysis = (id: string, label: string, fn: () => Promise<unknown>) => {
+    enqueue(`analysis-${id}-${caseId}`, label, fn);
   };
 
   const handleExportSingleAnalysis = async (role: AIRole) => {
@@ -307,19 +329,15 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
+                onClick={() => enqueueAnalysis('precedent', i18n.language === 'hy' ? '\u0546\u0561\u056D\u0561\u0564\u0565\u057A\u0565\u0580' : 'Precedents', async () => {
                   setIsPrecedentLoading(true);
                   setPrecedentData(null);
                   try {
                     const result = await analyzeCase('precedent_citation', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.precedent_data) {
-                      setPrecedentData(result.precedent_data as PrecedentCitationResult);
-                    }
-                  } finally {
-                    setIsPrecedentLoading(false);
-                  }
-                }}
-                disabled={isPrecedentLoading || isAnalyzing}
+                    if (result?.precedent_data) setPrecedentData(result.precedent_data as PrecedentCitationResult);
+                  } finally { setIsPrecedentLoading(false); }
+                })}
+                disabled={isPrecedentLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isPrecedentLoading ? (
@@ -334,19 +352,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsDeadlineLoading(true);
-                  setDeadlineData(null);
+                onClick={() => enqueueAnalysis('deadline', 'Deadlines', async () => {
+                  setIsDeadlineLoading(true); setDeadlineData(null);
                   try {
                     const result = await analyzeCase('deadline_rules', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.deadline_data) {
-                      setDeadlineData(result.deadline_data as DeadlineRulesResult);
-                    }
-                  } finally {
-                    setIsDeadlineLoading(false);
-                  }
-                }}
-                disabled={isDeadlineLoading || isAnalyzing}
+                    if (result?.deadline_data) setDeadlineData(result.deadline_data as DeadlineRulesResult);
+                  } finally { setIsDeadlineLoading(false); }
+                })}
+                disabled={isDeadlineLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isDeadlineLoading ? (
@@ -361,19 +374,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsComparatorLoading(true);
-                  setComparatorData(null);
+                onClick={() => enqueueAnalysis('comparator', 'Compare', async () => {
+                  setIsComparatorLoading(true); setComparatorData(null);
                   try {
                     const result = await analyzeCase('legal_position_comparator', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.comparator_data) {
-                      setComparatorData(result.comparator_data as LegalPositionComparatorResult);
-                    }
-                  } finally {
-                    setIsComparatorLoading(false);
-                  }
-                }}
-                disabled={isComparatorLoading || isAnalyzing}
+                    if (result?.comparator_data) setComparatorData(result.comparator_data as LegalPositionComparatorResult);
+                  } finally { setIsComparatorLoading(false); }
+                })}
+                disabled={isComparatorLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isComparatorLoading ? (
@@ -388,19 +396,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsAuditLoading(true);
-                  setAuditData(null);
+                onClick={() => enqueueAnalysis('audit', 'Audit', async () => {
+                  setIsAuditLoading(true); setAuditData(null);
                   try {
                     const result = await analyzeCase('hallucination_audit', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.audit_data) {
-                      setAuditData(result.audit_data as HallucinationAuditResult);
-                    }
-                  } finally {
-                    setIsAuditLoading(false);
-                  }
-                }}
-                disabled={isAuditLoading || isAnalyzing}
+                    if (result?.audit_data) setAuditData(result.audit_data as HallucinationAuditResult);
+                  } finally { setIsAuditLoading(false); }
+                })}
+                disabled={isAuditLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isAuditLoading ? (
@@ -415,19 +418,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsDraftLoading(true);
-                  setDraftText(null);
+                onClick={() => enqueueAnalysis('draft', 'Draft', async () => {
+                  setIsDraftLoading(true); setDraftText(null);
                   try {
                     const result = await analyzeCase('draft_deterministic', caseId, facts, legalQuestion || '', referencesText);
-                    if (result) {
-                      setDraftText(result.draft_text || result.analysis || null);
-                    }
-                  } finally {
-                    setIsDraftLoading(false);
-                  }
-                }}
-                disabled={isDraftLoading || isAnalyzing}
+                    if (result) setDraftText(result.draft_text || result.analysis || null);
+                  } finally { setIsDraftLoading(false); }
+                })}
+                disabled={isDraftLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isDraftLoading ? (
@@ -442,19 +440,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsStrategyLoading(true);
-                  setStrategyData(null);
+                onClick={() => enqueueAnalysis('strategy', 'Strategy', async () => {
+                  setIsStrategyLoading(true); setStrategyData(null);
                   try {
                     const result = await analyzeCase('strategy_builder', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.strategy_data) {
-                      setStrategyData(result.strategy_data as StrategyBuilderResult);
-                    }
-                  } finally {
-                    setIsStrategyLoading(false);
-                  }
-                }}
-                disabled={isStrategyLoading || isAnalyzing}
+                    if (result?.strategy_data) setStrategyData(result.strategy_data as StrategyBuilderResult);
+                  } finally { setIsStrategyLoading(false); }
+                })}
+                disabled={isStrategyLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isStrategyLoading ? (
@@ -469,19 +462,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsEvidenceWeaknessLoading(true);
-                  setEvidenceWeaknessData(null);
+                onClick={() => enqueueAnalysis('evidence-weakness', 'Weaknesses', async () => {
+                  setIsEvidenceWeaknessLoading(true); setEvidenceWeaknessData(null);
                   try {
                     const result = await analyzeCase('evidence_weakness', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.evidence_weakness_data) {
-                      setEvidenceWeaknessData(result.evidence_weakness_data as EvidenceWeaknessResult);
-                    }
-                  } finally {
-                    setIsEvidenceWeaknessLoading(false);
-                  }
-                }}
-                disabled={isEvidenceWeaknessLoading || isAnalyzing}
+                    if (result?.evidence_weakness_data) setEvidenceWeaknessData(result.evidence_weakness_data as EvidenceWeaknessResult);
+                  } finally { setIsEvidenceWeaknessLoading(false); }
+                })}
+                disabled={isEvidenceWeaknessLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isEvidenceWeaknessLoading ? (
@@ -496,19 +484,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsRiskFactorsLoading(true);
-                  setRiskFactorsData(null);
+                onClick={() => enqueueAnalysis('risk-factors', 'Risks', async () => {
+                  setIsRiskFactorsLoading(true); setRiskFactorsData(null);
                   try {
                     const result = await analyzeCase('risk_factors', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.risk_factors_data) {
-                      setRiskFactorsData(result.risk_factors_data as RiskFactorsResult);
-                    }
-                  } finally {
-                    setIsRiskFactorsLoading(false);
-                  }
-                }}
-                disabled={isRiskFactorsLoading || isAnalyzing}
+                    if (result?.risk_factors_data) setRiskFactorsData(result.risk_factors_data as RiskFactorsResult);
+                  } finally { setIsRiskFactorsLoading(false); }
+                })}
+                disabled={isRiskFactorsLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isRiskFactorsLoading ? (
@@ -524,7 +507,7 @@ export function CaseAIAnalysisPanel({
                 variant="outline" 
                 size="sm" 
                 onClick={() => setShowLawUpdateDialog(true)}
-                disabled={isLawUpdateLoading || isAnalyzing}
+                disabled={isLawUpdateLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isLawUpdateLoading ? (
@@ -539,19 +522,14 @@ export function CaseAIAnalysisPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={async () => {
-                  setIsCrossExamLoading(true);
-                  setCrossExamData(null);
+                onClick={() => enqueueAnalysis('cross-exam', 'Cross-Exam', async () => {
+                  setIsCrossExamLoading(true); setCrossExamData(null);
                   try {
                     const result = await analyzeCase('cross_exam', caseId, facts, legalQuestion || '', referencesText);
-                    if (result?.cross_exam_data) {
-                      setCrossExamData(result.cross_exam_data as CrossExamResult);
-                    }
-                  } finally {
-                    setIsCrossExamLoading(false);
-                  }
-                }}
-                disabled={isCrossExamLoading || isAnalyzing}
+                    if (result?.cross_exam_data) setCrossExamData(result.cross_exam_data as CrossExamResult);
+                  } finally { setIsCrossExamLoading(false); }
+                })}
+                disabled={isCrossExamLoading || isAnalyzing || isQueueBusy}
                 className="h-10 rounded-xl text-mobile-sm sm:text-sm"
               >
                 {isCrossExamLoading ? (
