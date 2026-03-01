@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import { stripMarkdown } from "./strip-markdown";
-import { registerArmenianFont, setArmenianFont, containsArmenian, containsCyrillic } from "./pdf/fontLoader";
+import { registerArmenianFont, setArmenianFont, setArmenianBoldFont, containsArmenian, containsCyrillic } from "./pdf/fontLoader";
 import { loadLogoForPDF, addLogoToPage } from "./pdf/logoLoader";
 
 interface AnalysisExportData {
@@ -100,7 +100,7 @@ function selectFont(doc: jsPDF, text: string, hasArmenianFont: boolean): void {
 
 function selectBoldFont(doc: jsPDF, text: string, hasArmenianFont: boolean): void {
   if (hasArmenianFont && (containsArmenian(text) || containsCyrillic(text))) {
-    setArmenianFont(doc);
+    setArmenianBoldFont(doc);
   } else {
     doc.setFont("helvetica", "bold");
   }
