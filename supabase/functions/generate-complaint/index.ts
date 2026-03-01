@@ -275,7 +275,7 @@ ${userSourcesBlock ? "When user-selected sources are provided, you MUST cite the
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      { timeoutMs: 120000 }
+      { timeoutMs: 280000 }
     );
     let generatedContent = routerResult.text;
 
