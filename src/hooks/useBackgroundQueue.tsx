@@ -1,6 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from "react";
 import { toast } from "sonner";
-import { useTranslation } from "react-i18next";
 
 export interface BackgroundTask {
   id: string;
@@ -14,7 +13,7 @@ export interface BackgroundTask {
   completedAt?: number;
 }
 
-interface UseBackgroundQueueReturn {
+interface BackgroundQueueContextValue {
   tasks: BackgroundTask[];
   isProcessing: boolean;
   currentTask: BackgroundTask | null;
@@ -24,13 +23,13 @@ interface UseBackgroundQueueReturn {
   queueLength: number;
 }
 
-export function useBackgroundQueue(): UseBackgroundQueueReturn {
-  const { t } = useTranslation("ai");
+const BackgroundQueueContext = createContext<BackgroundQueueContextValue | null>(null);
+
+export function BackgroundQueueProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<BackgroundTask[]>([]);
   const processingRef = useRef(false);
   const queueRef = useRef<BackgroundTask[]>([]);
 
-  // Keep queueRef in sync
   useEffect(() => {
     queueRef.current = tasks;
   }, [tasks]);
@@ -43,7 +42,6 @@ export function useBackgroundQueue(): UseBackgroundQueueReturn {
 
     processingRef.current = true;
 
-    // Mark as running
     setTasks(prev => prev.map(t =>
       t.id === next.id ? { ...t, status: "running" as const, startedAt: Date.now() } : t
     ));
@@ -64,9 +62,7 @@ export function useBackgroundQueue(): UseBackgroundQueueReturn {
       toast.error(`❌ ${next.label}: ${errorMsg}`);
     } finally {
       processingRef.current = false;
-      // Process next in queue after a small delay
       setTimeout(() => {
-        // Re-read from state
         const remaining = queueRef.current.find(t => t.status === "queued");
         if (remaining) processNext();
       }, 100);
@@ -74,11 +70,10 @@ export function useBackgroundQueue(): UseBackgroundQueueReturn {
   }, []);
 
   const enqueue = useCallback((id: string, label: string, execute: () => Promise<unknown>) => {
-    // Prevent duplicate tasks with the same id
     setTasks(prev => {
       const existing = prev.find(t => t.id === id && (t.status === "queued" || t.status === "running"));
       if (existing) {
-        toast.warning(`${label} — ${t("already_in_queue", "уже в очереди")}`);
+        toast.warning(`${label} — уже в очереди`);
         return prev;
       }
 
@@ -91,14 +86,12 @@ export function useBackgroundQueue(): UseBackgroundQueueReturn {
       };
 
       const updated = [...prev, task];
-      // Update ref immediately so processNext sees it
       queueRef.current = updated;
       return updated;
     });
 
-    // Trigger processing
     setTimeout(() => processNext(), 50);
-  }, [processNext, t]);
+  }, [processNext]);
 
   const clearCompleted = useCallback(() => {
     setTasks(prev => prev.filter(t => t.status === "queued" || t.status === "running"));
@@ -111,13 +104,25 @@ export function useBackgroundQueue(): UseBackgroundQueueReturn {
   const currentTask = tasks.find(t => t.status === "running") || null;
   const queueLength = tasks.filter(t => t.status === "queued").length;
 
-  return {
-    tasks,
-    isProcessing: !!currentTask,
-    currentTask,
-    enqueue,
-    clearCompleted,
-    clearAll,
-    queueLength,
-  };
+  return (
+    <BackgroundQueueContext.Provider value={{
+      tasks,
+      isProcessing: !!currentTask,
+      currentTask,
+      enqueue,
+      clearCompleted,
+      clearAll,
+      queueLength,
+    }}>
+      {children}
+    </BackgroundQueueContext.Provider>
+  );
+}
+
+export function useBackgroundQueue(): BackgroundQueueContextValue {
+  const ctx = useContext(BackgroundQueueContext);
+  if (!ctx) {
+    throw new Error("useBackgroundQueue must be used within BackgroundQueueProvider");
+  }
+  return ctx;
 }

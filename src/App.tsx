@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackgroundQueueProvider } from "@/hooks/useBackgroundQueue";
+import { GlobalQueueBar } from "@/components/GlobalQueueBar";
 
 import "@/i18n/config";
 
@@ -50,121 +52,125 @@ const PageLoader = () => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <a 
-          href="#main-content" 
-          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:rounded"
-        >
-          Skip to main content
-        </a>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
+    <BackgroundQueueProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <GlobalQueueBar />
+        <BrowserRouter>
+          <a 
+            href="#main-content" 
+            className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:rounded"
+          >
+            Skip to main content
+          </a>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<Login />} />
+            {/* ... keep existing code (all routes) */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <Dashboard />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <CalendarPage />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cases/:id"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <CaseDetail />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cases/:id/transcriptions"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <CaseTranscriptions />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transcriptions"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <AudioTranscriptions />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kb"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Suspense fallback={<PageLoader />}>
+                    <KnowledgeBase />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kb/:id"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Suspense fallback={<PageLoader />}>
+                    <KBDocumentDetail />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/login"
+              element={
                 <Suspense fallback={<PageLoader />}>
-                  <Dashboard />
+                  <AdminLogin />
                 </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/calendar"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<PageLoader />}>
-                  <CalendarPage />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/cases/:id"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<PageLoader />}>
-                  <CaseDetail />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/cases/:id/transcriptions"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<PageLoader />}>
-                  <CaseTranscriptions />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/transcriptions"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<PageLoader />}>
-                  <AudioTranscriptions />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/kb"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<PageLoader />}>
-                  <KnowledgeBase />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/kb/:id"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<PageLoader />}>
-                  <KBDocumentDetail />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/login"
-            element={
-              <Suspense fallback={<PageLoader />}>
-                <AdminLogin />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<PageLoader />}>
-                  <AdminPanel />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/my-documents"
-            element={
-              <ProtectedRoute>
-                <Suspense fallback={<PageLoader />}>
-                  <MyDocuments />
-                </Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Suspense fallback={<PageLoader />}>
+                    <AdminPanel />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/my-documents"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<PageLoader />}>
+                    <MyDocuments />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </BackgroundQueueProvider>
   </QueryClientProvider>
 );
 

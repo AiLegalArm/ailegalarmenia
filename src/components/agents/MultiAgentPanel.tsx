@@ -19,7 +19,7 @@ import { EvidenceRegistry } from "./EvidenceRegistry";
 import { AgentRunCard } from "./AgentRunCard";
 import { AggregatedReportView } from "./AggregatedReportView";
 import { GenerateComplaintButton } from "./GenerateComplaintButton";
-import { BackgroundQueueBar } from "./BackgroundQueueBar";
+
 
 // Party role options by case type
 const CIVIL_ROLES = [
@@ -112,7 +112,7 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
     loadAggregatedReport
   } = useMultiAgentAnalysis();
 
-  const { tasks, enqueue, clearCompleted, isProcessing } = useBackgroundQueue();
+  const { enqueue, isProcessing } = useBackgroundQueue();
 
   // Enqueue a single agent run in background
   const enqueueAgent = (agentType: AgentType) => {
@@ -226,10 +226,8 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
             </div>
 
             {/* Action Buttons - Stack vertically on mobile */}
-            {/* Background Queue Status */}
-            {tasks.length > 0 && (
-              <BackgroundQueueBar tasks={tasks} onClearCompleted={clearCompleted} />
-            )}
+
+
 
             <div className="flex flex-col sm:flex-row gap-2 w-full pt-1">
               <Button
