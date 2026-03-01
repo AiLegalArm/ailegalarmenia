@@ -10,6 +10,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.generate-complaint]
+wall_clock_limit = 300
 
 [functions.generate-document]
 
