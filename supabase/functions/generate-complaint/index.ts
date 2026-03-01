@@ -143,8 +143,9 @@ serve(async (req) => {
         query: searchTerms.join(' '),
         category: practiceCategory,
         referenceDate,
-        kbLimit: 8,
-        practiceLimit: 5,
+        kbLimit: 5,
+        practiceLimit: 3,
+        kbSnippetLength: 2500,
         fullPracticeText: false,
       });
       
