@@ -58,13 +58,6 @@ function selectBoldFont(doc: jsPDF, text: string, hasArmenianFont: boolean): voi
   doc.setTextColor(0, 0, 0);
 }
 
-/** Draw text twice with a tiny offset for extra visual weight */
-function drawBoldText(doc: jsPDF, text: string, x: number, y: number, options?: { align?: string; angle?: number }): void {
-  doc.setTextColor(0, 0, 0);
-  doc.text(text, x, y, options as any);
-  doc.text(text, x + 0.2, y, options as any);
-}
-
 function addWatermark(doc: jsPDF) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -225,7 +218,7 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
       selectBoldFont(doc, line, hasArmenianFont);
     }
     doc.setTextColor(0, 0, 0);
-    drawBoldText(doc, line, margin, yPosition);
+    doc.text(line, margin, yPosition);
     yPosition += 7;
   }
   
