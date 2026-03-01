@@ -42,7 +42,7 @@ const LABELS = {
 
 function selectFont(doc: jsPDF, text: string, hasArmenianFont: boolean): void {
   if (hasArmenianFont && (containsArmenian(text) || containsCyrillic(text))) {
-    setArmenianFont(doc);
+    setArmenianBoldFont(doc);
   } else {
     doc.setFont("helvetica", "normal");
   }
@@ -56,6 +56,13 @@ function selectBoldFont(doc: jsPDF, text: string, hasArmenianFont: boolean): voi
     doc.setFont("helvetica", "bold");
   }
   doc.setTextColor(0, 0, 0);
+}
+
+/** Draw text twice with a tiny offset for extra visual weight */
+function drawBoldText(doc: jsPDF, text: string, x: number, y: number, options?: { align?: string; angle?: number }): void {
+  doc.setTextColor(0, 0, 0);
+  doc.text(text, x, y, options as any);
+  doc.text(text, x + 0.2, y, options as any);
 }
 
 function addWatermark(doc: jsPDF) {
@@ -200,7 +207,7 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
   yPosition += 10;
   
   // Content
-  doc.setFontSize(12);
+  doc.setFontSize(13);
   doc.setTextColor(0, 0, 0);
   const cleanContent = stripMarkdown(data.content);
   selectBoldFont(doc, cleanContent, hasArmenianFont);
@@ -213,12 +220,13 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
       addWatermark(doc);
       addHeader(doc, data.title, exportDate, lang, hasArmenianFont, logoData);
       yPosition = 35;
-      doc.setFontSize(12);
+      doc.setFontSize(13);
       doc.setTextColor(0, 0, 0);
       selectBoldFont(doc, line, hasArmenianFont);
     }
-    doc.text(line, margin, yPosition);
-    yPosition += 6;
+    doc.setTextColor(0, 0, 0);
+    drawBoldText(doc, line, margin, yPosition);
+    yPosition += 7;
   }
   
   // Add footer to all pages

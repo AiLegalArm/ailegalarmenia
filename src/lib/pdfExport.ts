@@ -90,7 +90,7 @@ const ROLE_LABELS: Record<string, Record<string, string>> = {
 // Determine the best font to use based on text content and set text color to black
 function selectFont(doc: jsPDF, text: string, hasArmenianFont: boolean): void {
   if (hasArmenianFont && (containsArmenian(text) || containsCyrillic(text))) {
-    setArmenianFont(doc);
+    setArmenianBoldFont(doc);
   } else {
     doc.setFont("helvetica", "normal");
   }
@@ -106,6 +106,13 @@ function selectBoldFont(doc: jsPDF, text: string, hasArmenianFont: boolean): voi
   }
   // Always ensure text is black after font change
   doc.setTextColor(0, 0, 0);
+}
+
+/** Draw text twice with a tiny offset for extra visual weight */
+function drawBoldText(doc: jsPDF, text: string | string[], x: number, y: number, options?: { align?: string }): void {
+  doc.setTextColor(0, 0, 0);
+  doc.text(text as any, x, y, options as any);
+  doc.text(text as any, x + 0.2, y, options as any);
 }
 
 // Helper function to add header with case number and export date
@@ -241,8 +248,8 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
   doc.line(margin, yPosition, pageWidth - margin, yPosition);
   yPosition += 8;
   
-  // Analysis content — bold, size 12 for readability
-  doc.setFontSize(12);
+  // Analysis content — bold, size 13 for readability
+  doc.setFontSize(13);
   doc.setTextColor(0, 0, 0);
   const cleanAnalysis = stripMarkdown(data.analysisText);
   selectBoldFont(doc, cleanAnalysis, hasArmenianFont);
@@ -255,13 +262,14 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
       doc.addPage();
       addHeader(doc, data.caseNumber, exportDate, lang, hasArmenianFont, logoData);
       yPosition = contentTopMargin;
-      doc.setFontSize(12);
+      doc.setFontSize(13);
       doc.setTextColor(0, 0, 0);
       // Re-apply bold font after page break
       selectBoldFont(doc, line, hasArmenianFont);
     }
-    doc.text(line, margin, yPosition);
-    yPosition += 6;
+    doc.setTextColor(0, 0, 0);
+    drawBoldText(doc, line, margin, yPosition);
+    yPosition += 7;
   }
   
   // Sources
