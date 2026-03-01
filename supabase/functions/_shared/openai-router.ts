@@ -52,10 +52,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "Multi-agent analysis (GPT-5)",
   },
   "generate-complaint": {
-    model: "openai/gpt-5",
+    model: "google/gemini-2.5-flash",
     temperature: 0.1,
     max_tokens: 14000,
-    description: "Complaint drafting (GPT-5)",
+    description: "Complaint drafting (Gemini Flash — fast)",
   },
   "legal-chat": {
     model: "openai/gpt-5",
