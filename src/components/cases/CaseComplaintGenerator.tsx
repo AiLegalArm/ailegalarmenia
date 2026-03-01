@@ -227,10 +227,12 @@ export function CaseComplaintGenerator({
         });
       }
 
+      const finalText = analysisParts.join("\n\n---\n\n");
+      console.log("[CaseComplaintGenerator] Analyses loaded:", analysisParts.length, "parts, text length:", finalText.length);
       setState(prev => ({ 
         ...prev, 
         isLoadingAnalyses: false,
-        analysesText: analysisParts.join("\n\n---\n\n") 
+        analysesText: finalText 
       }));
     } catch (error) {
       console.error("Error loading analyses:", error);
@@ -619,7 +621,7 @@ export function CaseComplaintGenerator({
                 {/* Data summary */}
                 <div className="mt-6 p-4 rounded-lg border bg-muted/30">
                   <div className="text-sm font-medium mb-3">
-                    {getText("Տdelays\u0561\u056C\u0576\u0565\u0580\u056B \u0561\u0572\u0562\u0575\u0578\u0582\u0580\u0576\u0565\u0580", "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u0434\u0430\u043D\u043D\u044B\u0445", "Data sources")}:
+                    {getText("Տվdelays\u0576\u0565\u0580\u056B \u0561\u0572\u0562\u0575\u0578\u0582\u0580\u0576\u0565\u0580", "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u0434\u0430\u043D\u043D\u044B\u0445", "Data sources")}:
                   </div>
                   
                   {isDataLoading ? (
