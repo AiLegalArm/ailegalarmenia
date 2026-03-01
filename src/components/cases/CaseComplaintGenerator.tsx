@@ -169,22 +169,31 @@ export function CaseComplaintGenerator({
     }
   }, [caseId, getText]);
 
-  // Load saved AI analyses
+  // Load saved AI analyses (both single-agent and multi-agent)
   const loadSavedAnalyses = useCallback(async () => {
     setState(prev => ({ ...prev, isLoadingAnalyses: true }));
     try {
-      const { data, error } = await supabase
-        .from("ai_analysis")
-        .select("role, response_text, created_at")
-        .eq("case_id", caseId)
-        .order("created_at", { ascending: false });
+      // Load both ai_analysis and agent_analysis_runs in parallel
+      const [singleResult, multiResult] = await Promise.all([
+        supabase
+          .from("ai_analysis")
+          .select("role, response_text, created_at")
+          .eq("case_id", caseId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("agent_analysis_runs")
+          .select("agent_type, summary, analysis_result, completed_at")
+          .eq("case_id", caseId)
+          .eq("status", "completed")
+          .order("completed_at", { ascending: false }),
+      ]);
 
-      if (error) throw error;
+      const analysisParts: string[] = [];
 
-      if (data && data.length > 0) {
-        // Group by role and take latest
+      // Process single-agent analyses
+      if (singleResult.data && singleResult.data.length > 0) {
         const latestByRole = new Map<string, string>();
-        for (const item of data) {
+        for (const item of singleResult.data) {
           if (!latestByRole.has(item.role)) {
             latestByRole.set(item.role, item.response_text);
           }
@@ -197,20 +206,32 @@ export function CaseComplaintGenerator({
           aggregator: getText("\u0531\u0563\u0580\u0565\u0563\u0561\u057F\u0578\u0580", "\u0410\u0433\u0440\u0435\u0433\u0430\u0442\u043E\u0440", "Aggregator"),
         };
 
-        const analysisParts: string[] = [];
         latestByRole.forEach((text, role) => {
           const label = roleLabels[role] || role;
           analysisParts.push(`=== ${label} ===\n${text}`);
         });
-
-        setState(prev => ({ 
-          ...prev, 
-          isLoadingAnalyses: false,
-          analysesText: analysisParts.join("\n\n---\n\n") 
-        }));
-      } else {
-        setState(prev => ({ ...prev, isLoadingAnalyses: false }));
       }
+
+      // Process multi-agent analyses
+      if (multiResult.data && multiResult.data.length > 0) {
+        const latestByAgent = new Map<string, string>();
+        for (const item of multiResult.data) {
+          if (!latestByAgent.has(item.agent_type)) {
+            const text = item.summary || item.analysis_result || "";
+            if (text) latestByAgent.set(item.agent_type, text);
+          }
+        }
+
+        latestByAgent.forEach((text, agentType) => {
+          analysisParts.push(`=== ${getText("\u0544\u0578\u0582\u056C\u057F\u056B-\u0561\u0563\u0565\u0576\u057F", "\u041C\u0443\u043B\u044C\u0442\u0438-\u0430\u0433\u0435\u043D\u0442", "Multi-agent")}: ${agentType} ===\n${text}`);
+        });
+      }
+
+      setState(prev => ({ 
+        ...prev, 
+        isLoadingAnalyses: false,
+        analysesText: analysisParts.join("\n\n---\n\n") 
+      }));
     } catch (error) {
       console.error("Error loading analyses:", error);
       setState(prev => ({ ...prev, isLoadingAnalyses: false }));
