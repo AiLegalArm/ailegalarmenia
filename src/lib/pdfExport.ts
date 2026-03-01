@@ -241,11 +241,11 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
   doc.line(margin, yPosition, pageWidth - margin, yPosition);
   yPosition += 8;
   
-  // Analysis content
-  doc.setFontSize(10);
+  // Analysis content — bold, size 12 for readability
+  doc.setFontSize(12);
   doc.setTextColor(0, 0, 0);
   const cleanAnalysis = stripMarkdown(data.analysisText);
-  selectFont(doc, cleanAnalysis, hasArmenianFont);
+  selectBoldFont(doc, cleanAnalysis, hasArmenianFont);
   
   // Split analysis text into lines
   const analysisLines = doc.splitTextToSize(cleanAnalysis, maxWidth);
@@ -255,15 +255,13 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
       doc.addPage();
       addHeader(doc, data.caseNumber, exportDate, lang, hasArmenianFont, logoData);
       yPosition = contentTopMargin;
-      doc.setFontSize(10);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      // Re-apply Armenian font after page break
-      if (hasArmenianFont) {
-        setArmenianFont(doc);
-      }
+      // Re-apply bold font after page break
+      selectBoldFont(doc, line, hasArmenianFont);
     }
     doc.text(line, margin, yPosition);
-    yPosition += 5;
+    yPosition += 6;
   }
   
   // Sources
@@ -282,7 +280,7 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
     doc.text(labels.sourcesUsed, margin, yPosition);
     yPosition += 8;
     
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     
     data.sources.forEach((source, index) => {
@@ -290,15 +288,14 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
         doc.addPage();
         addHeader(doc, data.caseNumber, exportDate, lang, hasArmenianFont, logoData);
         yPosition = contentTopMargin;
-        doc.setFontSize(9);
+        doc.setFontSize(10);
         doc.setTextColor(0, 0, 0);
-        if (hasArmenianFont) {
-          setArmenianFont(doc);
-        }
+        selectBoldFont(doc, "", hasArmenianFont);
       }
       const sourceText = `${index + 1}. ${source.title} (${source.category}) - ${source.source_name}`;
+      selectBoldFont(doc, sourceText, hasArmenianFont);
       doc.text(sourceText, margin, yPosition);
-      yPosition += 5;
+      yPosition += 6;
     });
   }
   
@@ -399,10 +396,10 @@ export async function exportMultipleAnalysesToPDF(
     
     let yPosition = 45;
     
-    // Analysis content
-    doc.setFontSize(10);
+    // Analysis content — bold, size 12
+    doc.setFontSize(12);
     doc.setTextColor(0, 0, 0);
-    selectFont(doc, analysis.text, hasArmenianFont);
+    selectBoldFont(doc, analysis.text, hasArmenianFont);
     const analysisLines = doc.splitTextToSize(analysis.text, maxWidth);
     
     for (const line of analysisLines) {
@@ -410,14 +407,12 @@ export async function exportMultipleAnalysesToPDF(
         doc.addPage();
         addHeader(doc, caseNumber, exportDate, language, hasArmenianFont, logoData);
         yPosition = contentTopMargin;
-        doc.setFontSize(10);
+        doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
-        if (hasArmenianFont) {
-          setArmenianFont(doc);
-        }
+        selectBoldFont(doc, line, hasArmenianFont);
       }
       doc.text(line, margin, yPosition);
-      yPosition += 5;
+      yPosition += 6;
     }
     
     // Sources
