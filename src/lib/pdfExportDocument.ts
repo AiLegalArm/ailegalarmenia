@@ -213,11 +213,9 @@ export async function exportDocumentToPDF(data: DocumentExportData): Promise<voi
       addWatermark(doc);
       addHeader(doc, data.title, exportDate, lang, hasArmenianFont, logoData);
       yPosition = 35;
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
-      if (hasArmenianFont) {
-        setArmenianFont(doc);
-      }
+      selectBoldFont(doc, line, hasArmenianFont);
     }
     doc.text(line, margin, yPosition);
     yPosition += 6;
