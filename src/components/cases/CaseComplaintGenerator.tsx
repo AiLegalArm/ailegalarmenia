@@ -284,7 +284,7 @@ export function CaseComplaintGenerator({
           category,
           complaintType: complaintTypeId,
           extractedText: combinedText.slice(0, 80000),
-          language: lang === "hy" ? "hy" : lang === "ru" ? "ru" : "en",
+          language: "hy",
           caseDate: caseData.court_date || new Date().toISOString().split("T")[0],
         };
       const currentRefsText = getReferencesText(caseId);
