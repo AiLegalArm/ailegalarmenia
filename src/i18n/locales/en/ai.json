@@ -139,5 +139,8 @@
   "document_saved": "Document saved",
   "chat_bubble_hint": "Ask Legal AI",
   "select_all": "Select all",
-  "deselect_all": "Deselect all"
+  "deselect_all": "Deselect all",
+  "skip_cached": "Skip completed",
+  "agents_cached_skip": "agents skipped (cached)",
+  "all_agents_cached": "All agents already completed"
 }

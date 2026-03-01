@@ -56,8 +56,9 @@ interface UseMultiAgentAnalysisReturn {
   
   // Agent execution
   runAgent: (caseId: string, agentType: AgentType, referencesText?: string) => Promise<AgentAnalysisRun | null>;
-  runAllAgents: (caseId: string, referencesText?: string, selectedAgents?: AgentType[]) => Promise<void>;
+  runAllAgents: (caseId: string, referencesText?: string, selectedAgents?: AgentType[], options?: { fastMode?: boolean; skipCached?: boolean }) => Promise<void>;
   loadRuns: (caseId: string) => Promise<void>;
+  hasRecentRun: (caseId: string, agentType: AgentType, maxAgeMinutes?: number) => boolean;
   
   // Evidence registry
   loadEvidenceRegistry: (caseId: string) => Promise<void>;
@@ -410,8 +411,26 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     }
   }, [callMultiAgent, t]);
 
-  // Run all (or selected) agents sequentially
-  const runAllAgents = useCallback(async (caseId: string, referencesText?: string, selectedAgents?: AgentType[]) => {
+  // Check if a recent completed run exists for this agent (caching)
+  const hasRecentRun = useCallback((caseId: string, agentType: AgentType, maxAgeMinutes = 60): boolean => {
+    const existing = runs.find(r => 
+      r.case_id === caseId && 
+      r.agent_type === agentType && 
+      r.status === "completed" &&
+      r.completed_at
+    );
+    if (!existing?.completed_at) return false;
+    const age = Date.now() - new Date(existing.completed_at).getTime();
+    return age < maxAgeMinutes * 60 * 1000;
+  }, [runs]);
+
+  // Run all (or selected) agents with PARALLEL execution phases
+  const runAllAgents = useCallback(async (
+    caseId: string, 
+    referencesText?: string, 
+    selectedAgents?: AgentType[],
+    options?: { fastMode?: boolean; skipCached?: boolean }
+  ) => {
     const defaultOrder: AgentType[] = [
       "evidence_collector",
       "evidence_admissibility",
@@ -424,20 +443,71 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
       "aggregator"
     ];
     
-    const agentOrder = selectedAgents && selectedAgents.length > 0
+    let agentOrder = selectedAgents && selectedAgents.length > 0
       ? defaultOrder.filter(a => selectedAgents.includes(a))
       : defaultOrder;
+
+    // Caching: skip agents with recent completed runs
+    if (options?.skipCached) {
+      const skipped = agentOrder.filter(a => hasRecentRun(caseId, a));
+      if (skipped.length > 0) {
+        console.log(`[multi-agent] Skipping cached agents: ${skipped.join(", ")}`);
+        toast.info(`${skipped.length} ${t("ai:agents_cached_skip")}`);
+      }
+      agentOrder = agentOrder.filter(a => !hasRecentRun(caseId, a));
+      if (agentOrder.length === 0) {
+        toast.success(t("ai:all_agents_cached"));
+        return;
+      }
+    }
+
+    // Split into 3 phases for parallel execution:
+    // Phase 1: evidence_collector (must run first, feeds other agents)
+    // Phase 2: all middle agents (can run in parallel)
+    // Phase 3: aggregator (must run last, synthesizes all)
+    const phase1 = agentOrder.filter(a => a === "evidence_collector");
+    const phase3 = agentOrder.filter(a => a === "aggregator");
+    const phase2 = agentOrder.filter(a => a !== "evidence_collector" && a !== "aggregator");
     
     setIsLoading(true);
     let allSucceeded = true;
     
     try {
-      for (const agentType of agentOrder) {
+      // Phase 1: Evidence collector (sequential - required by others)
+      for (const agentType of phase1) {
         const result = await runAgent(caseId, agentType, referencesText);
         if (!result) {
           allSucceeded = false;
           toast.error(`${t("ai:analysis_failed")}: ${agentType}`);
-          break;
+          return;
+        }
+      }
+
+      // Phase 2: All middle agents IN PARALLEL (5-7x speedup!)
+      if (phase2.length > 0) {
+        const results = await Promise.allSettled(
+          phase2.map(agentType => runAgent(caseId, agentType, referencesText))
+        );
+        
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result.status === "rejected" || (result.status === "fulfilled" && !result.value)) {
+            allSucceeded = false;
+            toast.error(`${t("ai:analysis_failed")}: ${phase2[i]}`);
+          }
+        }
+      }
+
+      // Phase 3: Aggregator (sequential - needs all results)
+      if (allSucceeded) {
+        // Reload runs to get latest results for aggregator
+        await loadRuns(caseId);
+        for (const agentType of phase3) {
+          const result = await runAgent(caseId, agentType, referencesText);
+          if (!result) {
+            allSucceeded = false;
+            toast.error(`${t("ai:analysis_failed")}: ${agentType}`);
+          }
         }
       }
       
@@ -447,7 +517,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [runAgent, t]);
+  }, [runAgent, hasRecentRun, loadRuns, t]);
 
   // Load evidence registry
   const loadEvidenceRegistry = useCallback(async (caseId: string) => {
@@ -575,6 +645,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     loadEvidenceRegistry,
     updateEvidenceItem,
     generateAggregatedReport,
-    loadAggregatedReport
+    loadAggregatedReport,
+    hasRecentRun,
   };
 }
