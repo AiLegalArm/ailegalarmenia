@@ -96,3 +96,7 @@ verify_jwt = false
 [functions.admin-ai-chat]
 
 [functions.export-data]
+
+[functions.data-sync-to-live]
+verify_jwt = false
+wall_clock_limit = 300
