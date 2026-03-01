@@ -619,7 +619,7 @@ export function CaseComplaintGenerator({
                 {/* Data summary */}
                 <div className="mt-6 p-4 rounded-lg border bg-muted/30">
                   <div className="text-sm font-medium mb-3">
-                    {getText("\u0538\u0576\u057F\u0580\u057E\u0561\u056E \u057F\u057E\u0575\u0561\u056C\u0576\u0565\u0580", "\u0412\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435", "Selected data")}:
+                    {getText("Տdelays\u0561\u056C\u0576\u0565\u0580\u056B \u0561\u0572\u0562\u0575\u0578\u0582\u0580\u0576\u0565\u0580", "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u0434\u0430\u043D\u043D\u044B\u0445", "Data sources")}:
                   </div>
                   
                   {isDataLoading ? (
@@ -629,14 +629,10 @@ export function CaseComplaintGenerator({
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      {caseData.description && (
-                        <Badge variant="secondary">
-                          {getText("\u0546\u056F\u0561\u0580\u0561\u0563\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576", "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435", "Description")}
-                        </Badge>
-                      )}
-                      {caseData.facts && (
-                        <Badge variant="secondary">
-                          {getText("\u0553\u0561\u057D\u057F\u0565\u0580", "\u0424\u0430\u043A\u0442\u044B", "Facts")}
+                      {state.analysesText && (
+                        <Badge variant="default">
+                          <Building2 className="h-3 w-3 mr-1" />
+                          {getText("AI \u057E\u0565\u0580\u056C\u0578\u0582\u056E\u0578\u0582\u0569\u0575\u0578\u0582\u0576\u0576\u0565\u0580", "AI \u0430\u043D\u0430\u043B\u0438\u0437\u044B", "AI Analyses")}
                         </Badge>
                       )}
                       {state.filesText && (
@@ -645,10 +641,14 @@ export function CaseComplaintGenerator({
                           {getText("\u0556\u0561\u0575\u056C\u0565\u0580", "\u0424\u0430\u0439\u043B\u044B", "Files")}
                         </Badge>
                       )}
-                      {state.analysesText && (
-                        <Badge variant="secondary">
-                          <Building2 className="h-3 w-3 mr-1" />
-                          AI {getText("\u054E\u0565\u0580\u056C\u0578\u0582\u056E\u0578\u0582\u0569\u0575\u0578\u0582\u0576", "\u0410\u043D\u0430\u043B\u0438\u0437", "Analysis")}
+                      {caseData.description && (
+                        <Badge variant="outline">
+                          {getText("\u0546\u056F\u0561\u0580\u0561\u0563\u0580\u0578\u0582\u0569\u0575\u0578\u0582\u0576", "\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435", "Description")}
+                        </Badge>
+                      )}
+                      {caseData.facts && (
+                        <Badge variant="outline">
+                          {getText("\u0553\u0561\u057D\u057F\u0565\u0580", "\u0424\u0430\u043A\u0442\u044B", "Facts")}
                         </Badge>
                       )}
                       {!hasData && (
