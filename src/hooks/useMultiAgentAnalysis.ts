@@ -56,7 +56,7 @@ interface UseMultiAgentAnalysisReturn {
   
   // Agent execution
   runAgent: (caseId: string, agentType: AgentType, referencesText?: string) => Promise<AgentAnalysisRun | null>;
-  runAllAgents: (caseId: string, referencesText?: string) => Promise<void>;
+  runAllAgents: (caseId: string, referencesText?: string, selectedAgents?: AgentType[]) => Promise<void>;
   loadRuns: (caseId: string) => Promise<void>;
   
   // Evidence registry
@@ -410,9 +410,9 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
     }
   }, [callMultiAgent, t]);
 
-  // Run all agents sequentially
-  const runAllAgents = useCallback(async (caseId: string, referencesText?: string) => {
-    const agentOrder: AgentType[] = [
+  // Run all (or selected) agents sequentially
+  const runAllAgents = useCallback(async (caseId: string, referencesText?: string, selectedAgents?: AgentType[]) => {
+    const defaultOrder: AgentType[] = [
       "evidence_collector",
       "evidence_admissibility",
       "charge_qualification",
@@ -423,6 +423,10 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
       "rights_violations",
       "aggregator"
     ];
+    
+    const agentOrder = selectedAgents && selectedAgents.length > 0
+      ? defaultOrder.filter(a => selectedAgents.includes(a))
+      : defaultOrder;
     
     setIsLoading(true);
     let allSucceeded = true;

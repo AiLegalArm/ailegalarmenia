@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Play, FileStack, ClipboardList, FileText, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { useMultiAgentAnalysis } from "@/hooks/useMultiAgentAnalysis";
 import { AGENT_CONFIGS, type AgentType, type AgentRunStatus } from "./types";
@@ -60,6 +61,24 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
   const lang = i18n.language;
   const [activeTab, setActiveTab] = useState("volumes");
   const [selectedRole, setSelectedRole] = useState(partyRole || "");
+  const [selectedAgents, setSelectedAgents] = useState<Set<AgentType>>(new Set());
+
+  const toggleAgent = (agentType: AgentType) => {
+    setSelectedAgents(prev => {
+      const next = new Set(prev);
+      if (next.has(agentType)) next.delete(agentType);
+      else next.add(agentType);
+      return next;
+    });
+  };
+
+  const toggleAllAgents = () => {
+    if (selectedAgents.size === AGENT_CONFIGS.length) {
+      setSelectedAgents(new Set());
+    } else {
+      setSelectedAgents(new Set(AGENT_CONFIGS.map(a => a.type)));
+    }
+  };
 
   const getAgentName = (agent: typeof AGENT_CONFIGS[0]) => {
     if (lang === 'hy') return agent.nameHy;
@@ -154,7 +173,11 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
             {/* Action Buttons - Stack vertically on mobile */}
             <div className="flex flex-col sm:flex-row gap-2 w-full pt-1">
               <Button
-                onClick={() => runAllAgents(caseId, referencesText || undefined)}
+                onClick={() => runAllAgents(
+                  caseId,
+                  referencesText || undefined,
+                  selectedAgents.size > 0 ? Array.from(selectedAgents) : undefined
+                )}
                 disabled={isLoading || volumes.length === 0}
                 size="sm"
                 className="w-full sm:flex-1 h-9 rounded-lg text-xs font-medium"
@@ -164,7 +187,11 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                 ) : (
                   <>
                     <Play className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                    <span className="truncate">{t("ai:run_all_agents")}</span>
+                    <span className="truncate">
+                      {selectedAgents.size > 0 && selectedAgents.size < AGENT_CONFIGS.length
+                        ? `${t("ai:run_all_agents")} (${selectedAgents.size})`
+                        : t("ai:run_all_agents")}
+                    </span>
                   </>
                 )}
               </Button>
@@ -190,44 +217,70 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
         </CardHeader>
       </Card>
 
-      {/* Agent Status Grid - Compact horizontal scroll */}
-      <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 pb-1">
-        <div className="flex gap-1.5 sm:grid sm:grid-cols-5 lg:grid-cols-9 sm:gap-2 min-w-max sm:min-w-0">
-          {AGENT_CONFIGS.map((agent) => {
-            const status = getAgentRunStatus(agent.type);
-            const isCurrentAgent = currentAgent === agent.type;
-            
-            return (
-              <Card 
-                key={agent.type}
-                className={`cursor-pointer transition-all duration-300 active:scale-[0.96] w-14 sm:w-auto shrink-0 ${
-                  isCurrentAgent
-                    ? "ring-2 ring-primary shadow-lg shadow-primary/25 animate-pulse scale-105"
-                    : ""
-                } ${status === "completed" ? "bg-accent/50 ring-1 ring-green-500/30" : ""} ${status === "failed" ? "ring-1 ring-destructive/30" : ""}`}
-                onClick={() => !isLoading && runAgent(caseId, agent.type, referencesText || undefined)}
-              >
-                <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[52px] sm:min-h-[60px] relative overflow-hidden">
-                  {isCurrentAgent && (
-                    <div className="absolute inset-0 bg-primary/10 animate-[pulse_1.5s_ease-in-out_infinite]" />
-                  )}
-                  <div className={`text-sm sm:text-lg mb-0.5 relative z-10 ${isCurrentAgent ? "animate-bounce" : ""}`}>
-                    {agent.icon}
-                  </div>
-                  <div className={`text-[8px] sm:text-[10px] font-medium truncate w-full leading-tight relative z-10 ${isCurrentAgent ? "text-primary font-bold" : ""}`} title={getAgentName(agent)}>
-                    {getAgentName(agent).split(" ")[0]}
-                  </div>
-                  <div className="mt-0.5 flex justify-center relative z-10">
-                    {isCurrentAgent ? (
-                      <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                    ) : status ? getStatusIcon(status) : (
-                      <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-muted" />
+      {/* Agent Selection Grid */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <Checkbox
+            id="select-all-agents"
+            checked={selectedAgents.size === AGENT_CONFIGS.length}
+            onCheckedChange={toggleAllAgents}
+          />
+          <label htmlFor="select-all-agents" className="text-[10px] sm:text-xs text-muted-foreground cursor-pointer">
+            {selectedAgents.size === AGENT_CONFIGS.length ? t("ai:deselect_all") : t("ai:select_all")}
+          </label>
+          {selectedAgents.size > 0 && selectedAgents.size < AGENT_CONFIGS.length && (
+            <Badge variant="secondary" className="text-[9px] px-1.5 h-4">{selectedAgents.size}</Badge>
+          )}
+        </div>
+        <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 pb-1">
+          <div className="flex gap-1.5 sm:grid sm:grid-cols-5 lg:grid-cols-9 sm:gap-2 min-w-max sm:min-w-0">
+            {AGENT_CONFIGS.map((agent) => {
+              const status = getAgentRunStatus(agent.type);
+              const isCurrentAgent = currentAgent === agent.type;
+              const isSelected = selectedAgents.has(agent.type);
+              
+              return (
+                <Card 
+                  key={agent.type}
+                  className={`transition-all duration-300 w-14 sm:w-auto shrink-0 ${
+                    isCurrentAgent
+                      ? "ring-2 ring-primary shadow-lg shadow-primary/25 animate-pulse scale-105"
+                      : ""
+                  } ${status === "completed" ? "bg-accent/50 ring-1 ring-green-500/30" : ""} ${status === "failed" ? "ring-1 ring-destructive/30" : ""} ${isSelected ? "ring-2 ring-primary/60" : ""}`}
+                >
+                  <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[52px] sm:min-h-[60px] relative overflow-hidden">
+                    {/* Checkbox */}
+                    <div className="absolute top-0.5 left-0.5 z-20">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleAgent(agent.type)}
+                        className="h-3 w-3 sm:h-3.5 sm:w-3.5"
+                      />
+                    </div>
+                    {isCurrentAgent && (
+                      <div className="absolute inset-0 bg-primary/10 animate-[pulse_1.5s_ease-in-out_infinite]" />
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    <div 
+                      className={`text-sm sm:text-lg mb-0.5 relative z-10 cursor-pointer ${isCurrentAgent ? "animate-bounce" : ""}`}
+                      onClick={() => !isLoading && runAgent(caseId, agent.type, referencesText || undefined)}
+                    >
+                      {agent.icon}
+                    </div>
+                    <div className={`text-[8px] sm:text-[10px] font-medium truncate w-full leading-tight relative z-10 ${isCurrentAgent ? "text-primary font-bold" : ""}`} title={getAgentName(agent)}>
+                      {getAgentName(agent).split(" ")[0]}
+                    </div>
+                    <div className="mt-0.5 flex justify-center relative z-10">
+                      {isCurrentAgent ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                      ) : status ? getStatusIcon(status) : (
+                        <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-muted" />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
       </div>
 
