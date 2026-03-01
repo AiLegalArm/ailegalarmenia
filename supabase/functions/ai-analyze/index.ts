@@ -526,6 +526,25 @@ serve(async (req) => {
     const budgetedFacts = budgeted.userFacts || caseFacts || "";
     const budgetedOcr = budgeted.ocrText || caseFilesContext || "";
     const budgetedRag = budgeted.ragLegislation || ragContext || "";
+    // ====== PARTY CONTEXT BLOCK ======
+    let partyContextBlock = "";
+    if (caseId) {
+      const { data: caseRow } = await supabase
+        .from("cases")
+        .select("party_role, appeal_party_role, case_type")
+        .eq("id", caseId)
+        .maybeSingle();
+      if (caseRow?.party_role) {
+        const roleLabel = caseRow.party_role;
+        const appealRole = caseRow.appeal_party_role || "";
+        const caseType = caseRow.case_type || "";
+        partyContextBlock = `### Party Role (Կողdelays դdelays)\nparty_role: ${roleLabel}\n`;
+        if (appealRole) partyContextBlock += `appeal_party_role: ${appealRole}\n`;
+        if (caseType) partyContextBlock += `case_type: ${caseType}\n`;
+        partyContextBlock += "\n";
+      }
+    }
+
     // ====== PARSE USER-PROVIDED SOURCES ======
     let userSourcesBlock = "";
     if (referencesText?.trim()) {
