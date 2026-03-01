@@ -369,6 +369,39 @@ export function CaseComplaintGenerator({
         "\u0416\u0430\u043B\u043E\u0431\u0430 \u0443\u0441\u043F\u0435\u0448\u043D\u043E \u0441\u0433\u0435\u043D\u0435\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0430",
         "Complaint generated successfully"
       ));
+
+      // Auto-save immediately after generation
+      if (user?.id) {
+        try {
+          const typeLabel = state.complaintType === "appeal" 
+            ? getText("\u054E\u0565\u0580\u0561\u0584\u0576\u0576\u056B\u0579 \u0562\u0578\u0572\u0578\u0584", "\u0410\u043F\u0435\u043B\u043B\u044F\u0446\u0438\u043E\u043D\u043D\u0430\u044F \u0436\u0430\u043B\u043E\u0431\u0430", "Appeal Complaint")
+            : getText("\u054E\u0573\u057C\u0561\u0562\u0565\u056F \u0562\u0578\u0572\u0578\u0584", "\u041A\u0430\u0441\u0441\u0430\u0446\u0438\u043E\u043D\u043D\u0430\u044F \u0436\u0430\u043B\u043E\u0431\u0430", "Cassation Complaint");
+
+          await supabase
+            .from("generated_documents")
+            .insert({
+              user_id: user.id,
+              case_id: caseId,
+              title: `${typeLabel} - ${caseData.case_number || caseData.title}`,
+              content_text: content,
+              status: "draft",
+              metadata: {
+                complaint_type: state.complaintType,
+                case_type: caseData.case_type,
+                generated_at: new Date().toISOString(),
+                auto_saved: true,
+              }
+            });
+
+          toast.success(getText(
+            "\u0532\u0578\u0572\u0578\u0584\u0568 \u0561\u057E\u057F\u0578\u0574\u0561\u057F \u057A\u0561\u0570\u057A\u0561\u0576\u057E\u0565\u056C \u0567",
+            "\u0416\u0430\u043B\u043E\u0431\u0430 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0430",
+            "Complaint auto-saved"
+          ));
+        } catch (saveErr) {
+          console.error("Auto-save error:", saveErr);
+        }
+      }
     } catch (error) {
       console.error("Generation error:", error);
       setState(prev => ({ ...prev, isGenerating: false, progress: 0 }));
