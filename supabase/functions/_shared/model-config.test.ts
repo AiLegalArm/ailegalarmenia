@@ -79,16 +79,18 @@ Deno.test("All legal profiles pass validateProfiles()", () => {
 // 3) MODEL SELECTION — Correct model for each use case
 // =============================================================================
 
-Deno.test("Deep analysis uses Pro model", () => {
-  assertEquals(LEGAL_DETERMINISTIC.model, "google/gemini-2.5-pro");
-  assertEquals(LEGAL_CHAT.model, "google/gemini-2.5-pro");
-  assertEquals(MULTI_AGENT_ANALYSIS.model, "google/gemini-2.5-pro");
+Deno.test("Deep analysis uses GPT-5", () => {
+  assertEquals(LEGAL_DETERMINISTIC.model, "openai/gpt-5");
+  assertEquals(LEGAL_CHAT.model, "openai/gpt-5");
+  assertEquals(MULTI_AGENT_ANALYSIS.model, "openai/gpt-5");
+  assertEquals(DOCUMENT_GENERATION.model, "openai/gpt-5");
+  assertEquals(COMPLAINT_GENERATION.model, "openai/gpt-5");
+  assertEquals(FILE_ANALYSIS.model, "openai/gpt-5");
 });
 
-Deno.test("Bulk operations use Flash model", () => {
+Deno.test("Utility operations use Flash model", () => {
   assertEquals(OCR_EXTRACTION.model, "google/gemini-2.5-flash");
   assertEquals(AUDIO_TRANSCRIPTION.model, "google/gemini-2.5-flash");
-  assertEquals(DOCUMENT_GENERATION.model, "google/gemini-2.5-flash");
   assertEquals(FIELD_EXTRACTION.model, "google/gemini-2.5-flash");
 });
 
@@ -119,7 +121,7 @@ Deno.test("FIELD_EXTRACTION temperature <= 0.1", () => {
 
 Deno.test("getProfile returns correct profile", () => {
   const p = getProfile("LEGAL_DETERMINISTIC");
-  assertEquals(p.model, "google/gemini-2.5-pro");
+  assertEquals(p.model, "openai/gpt-5");
   assertEquals(p.temperature, 0.2);
 });
 
@@ -138,10 +140,10 @@ Deno.test("getProfile throws on invalid name", () => {
 // =============================================================================
 
 Deno.test("buildModelParams includes base fields", () => {
-  const params = buildModelParams(DOCUMENT_GENERATION);
+  const params = buildModelParams(FIELD_EXTRACTION);
   assertEquals(params.model, "google/gemini-2.5-flash");
-  assertEquals(params.temperature, 0.2);
-  assertEquals(params.max_tokens, 10000);
+  assertEquals(params.temperature, 0.1);
+  assertEquals(params.max_tokens, 16000);
   assertEquals(params.top_p, undefined);
   assertEquals(params.frequency_penalty, undefined);
 });
