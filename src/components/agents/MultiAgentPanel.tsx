@@ -12,12 +12,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Play, FileStack, ClipboardList, FileText, CheckCircle2, XCircle, AlertCircle, Zap, Clock } from "lucide-react";
 import { useMultiAgentAnalysis } from "@/hooks/useMultiAgentAnalysis";
+import { useBackgroundQueue } from "@/hooks/useBackgroundQueue";
 import { AGENT_CONFIGS, type AgentType, type AgentRunStatus } from "./types";
 import { VolumeManager } from "./VolumeManager";
 import { EvidenceRegistry } from "./EvidenceRegistry";
 import { AgentRunCard } from "./AgentRunCard";
 import { AggregatedReportView } from "./AggregatedReportView";
 import { GenerateComplaintButton } from "./GenerateComplaintButton";
+import { BackgroundQueueBar } from "./BackgroundQueueBar";
 
 // Party role options by case type
 const CIVIL_ROLES = [
@@ -90,7 +92,6 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
 
   const referencesText = useReferencesText(caseId);
 
-  
   const {
     isLoading,
     currentAgent,
@@ -110,6 +111,42 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
     generateAggregatedReport,
     loadAggregatedReport
   } = useMultiAgentAnalysis();
+
+  const { tasks, enqueue, clearCompleted, isProcessing } = useBackgroundQueue();
+
+  // Enqueue a single agent run in background
+  const enqueueAgent = (agentType: AgentType) => {
+    const config = AGENT_CONFIGS.find(a => a.type === agentType);
+    const label = config ? getAgentName(config) : agentType;
+    enqueue(
+      `agent-${agentType}-${caseId}`,
+      label,
+      () => runAgent(caseId, agentType, referencesText || undefined)
+    );
+  };
+
+  // Enqueue "run all agents" as a single background task
+  const enqueueRunAll = () => {
+    enqueue(
+      `run-all-${caseId}-${Date.now()}`,
+      t("ai:run_all_agents"),
+      () => runAllAgents(
+        caseId,
+        referencesText || undefined,
+        selectedAgents.size > 0 ? Array.from(selectedAgents) : undefined,
+        { skipCached }
+      )
+    );
+  };
+
+  // Enqueue aggregated report generation
+  const enqueueReport = () => {
+    enqueue(
+      `report-${caseId}-${Date.now()}`,
+      t("ai:generate_report", "Генерация отчёта"),
+      () => generateAggregatedReport(caseId)
+    );
+  };
 
   // Load data on mount
   useEffect(() => {
@@ -189,19 +226,19 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
             </div>
 
             {/* Action Buttons - Stack vertically on mobile */}
+            {/* Background Queue Status */}
+            {tasks.length > 0 && (
+              <BackgroundQueueBar tasks={tasks} onClearCompleted={clearCompleted} />
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2 w-full pt-1">
               <Button
-                onClick={() => runAllAgents(
-                  caseId,
-                  referencesText || undefined,
-                  selectedAgents.size > 0 ? Array.from(selectedAgents) : undefined,
-                  { skipCached }
-                )}
-                disabled={isLoading || volumes.length === 0}
+                onClick={enqueueRunAll}
+                disabled={isProcessing || volumes.length === 0}
                 size="sm"
                 className="w-full sm:flex-1 h-9 rounded-lg text-xs font-medium"
               >
-                {isLoading ? (
+                {isProcessing ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <>
@@ -268,7 +305,7 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                       : ""
                   } ${status === "completed" ? "bg-accent/50 ring-1 ring-green-500/30" : ""} ${status === "failed" ? "ring-1 ring-destructive/30" : ""} ${isSelected ? "ring-2 ring-primary/60" : ""}`}
                   onClick={() => {
-                    if (!isLoading) runAgent(caseId, agent.type, referencesText || undefined);
+                    if (!isLoading && !isProcessing) enqueueAgent(agent.type);
                   }}
                 >
                   <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[60px] sm:min-h-[68px] relative overflow-hidden">
@@ -351,8 +388,8 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                     agent={agent}
                     run={latestRun}
                     isRunning={currentAgent === agent.type}
-                    onRun={() => runAgent(caseId, agent.type, referencesText || undefined)}
-                    disabled={isLoading}
+                    onRun={() => enqueueAgent(agent.type)}
+                    disabled={isLoading || isProcessing}
                   />
                 );
               })}
@@ -375,8 +412,8 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
             report={aggregatedReport}
             runs={runs}
             evidenceCount={evidenceRegistry.length}
-            onGenerateReport={() => generateAggregatedReport(caseId)}
-            isGenerating={isLoading && currentAgent === "aggregator"}
+            onGenerateReport={enqueueReport}
+            isGenerating={(isLoading && currentAgent === "aggregator") || isProcessing}
           />
         </TabsContent>
       </Tabs>
