@@ -28,17 +28,47 @@ export function GenerateComplaintButton({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+  const [isSaved, setIsSaved] = useState(false);
 
   const completedRuns = runs.filter(r => r.status === "completed");
   const hasEnoughData = completedRuns.length >= 3 || aggregatedReport;
 
+  const saveDocument = async (content: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const { error } = await supabase
+        .from("generated_documents")
+        .insert({
+          user_id: user.id,
+          case_id: caseId,
+          title: t("ai:appeal_based_on_analysis"),
+          content_text: content,
+          source_text: `Multi-agent analysis: ${completedRuns.length} agents`,
+          status: "draft"
+        });
+
+      if (error) throw error;
+      setIsSaved(true);
+      toast.success(t("ai:document_saved"));
+    } catch (error) {
+      console.error("Auto-save error:", error);
+      toast.error(t("common:error"));
+    }
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setIsSaved(false);
     
     try {
-      // Build compact extractedText — single source, no duplication
+      // Use full analysis_result for richer context
       const agentSummaries = completedRuns
-        .map(run => `--- ${run.agent_type} ---\n${(run.summary || "").substring(0, 400)}`)
+        .map(run => {
+          const text = run.analysis_result || run.summary || "";
+          return `--- ${run.agent_type} ---\n${text.substring(0, 2000)}`;
+        })
         .join("\n\n");
 
       const evidenceSummary = evidenceRegistry.slice(0, 15).map(e =>
@@ -46,10 +76,10 @@ export function GenerateComplaintButton({
       ).join("\n");
 
       const reportSection = aggregatedReport ? [
-        aggregatedReport.executive_summary?.substring(0, 600),
-        aggregatedReport.violations_summary?.substring(0, 400),
-        aggregatedReport.defense_strategy?.substring(0, 400),
-        aggregatedReport.recommendations?.substring(0, 300),
+        aggregatedReport.executive_summary?.substring(0, 1500),
+        aggregatedReport.violations_summary?.substring(0, 1000),
+        aggregatedReport.defense_strategy?.substring(0, 1000),
+        aggregatedReport.recommendations?.substring(0, 600),
       ].filter(Boolean).join("\n\n") : "";
 
       const extractedText = [
@@ -59,58 +89,61 @@ export function GenerateComplaintButton({
         reportSection ? `\n=== Aggregated Report ===\n${reportSection}` : "",
       ].filter(Boolean).join("\n\n");
 
-      const { data, error } = await supabase.functions.invoke("generate-complaint", {
-        body: {
-          courtType: "appellate",
-          category: "criminal",
-          complaintType: t("ai:appeal_based_on_analysis"),
-          extractedText,
-          language: i18n.language,
+      // Use fetch with long timeout instead of supabase.functions.invoke
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const sessionData = await supabase.auth.getSession();
+      const accessToken = sessionData.data.session?.access_token;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+      let data: Record<string, unknown>;
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/generate-complaint`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${accessToken || supabaseKey}`,
+          },
+          body: JSON.stringify({
+            courtType: "appellate",
+            category: "criminal",
+            complaintType: t("ai:appeal_based_on_analysis"),
+            extractedText: extractedText.slice(0, 80000),
+            language: "hy",
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`Edge function returned ${res.status}: ${errBody}`);
         }
-      });
-
-      if (error) throw error;
-
-      if (data?.content) {
-        setGeneratedContent(data.content);
-        toast.success(t("ai:complaint_generated"));
+        data = await res.json();
+      } catch (e: unknown) {
+        clearTimeout(timeoutId);
+        if (e instanceof DOMException && e.name === "AbortError") {
+          throw new Error("Request timed out after 5 minutes");
+        }
+        throw e;
       }
+
+      const content = (data?.content || data?.complaint || "") as string;
+      if (!content) throw new Error("No content generated");
+
+      setGeneratedContent(content);
+      toast.success(t("ai:complaint_generated"));
+
+      // Auto-save immediately after generation
+      await saveDocument(content);
     } catch (error) {
       console.error("Complaint generation error:", error);
       toast.error(t("ai:complaint_generation_failed"));
     } finally {
       setIsGenerating(false);
-    }
-  };
-
-  const handleSaveDocument = async () => {
-    if (!generatedContent) return;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase
-        .from("generated_documents")
-        .insert({
-          user_id: user.id,
-          case_id: caseId,
-          title: t("ai:appeal_based_on_analysis"),
-          content_text: generatedContent,
-          source_text: `Multi-agent analysis: ${completedRuns.length} agents`,
-          status: "draft"
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      toast.success(t("ai:document_saved"));
-      setIsDialogOpen(false);
-      navigate("/my-documents");
-    } catch (error) {
-      console.error("Save error:", error);
-      toast.error(t("common:error"));
     }
   };
 
@@ -140,7 +173,6 @@ export function GenerateComplaintButton({
 
           {!generatedContent ? (
             <div className="space-y-3 sm:space-y-4 py-2 sm:py-4">
-              {/* Summary of available data */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="p-3 sm:p-4 border rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
@@ -201,23 +233,31 @@ export function GenerateComplaintButton({
               </Button>
             </div>
           ) : (
-            <ScrollArea className="h-[50vh] sm:h-[60vh]">
-              <div className="prose prose-sm max-w-none dark:prose-invert p-3 sm:p-4 border rounded-lg bg-muted/30">
-                <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">
-                  {generatedContent}
-                </pre>
-              </div>
-            </ScrollArea>
+            <div className="space-y-3 py-2 sm:py-4">
+              {isSaved && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 text-xs sm:text-sm">
+                  <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                  <span>{t("ai:document_saved")}</span>
+                </div>
+              )}
+              <ScrollArea className="h-[50vh] sm:h-[55vh]">
+                <div className="prose prose-sm max-w-none dark:prose-invert p-3 sm:p-4 border rounded-lg bg-muted/30">
+                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">
+                    {generatedContent}
+                  </pre>
+                </div>
+              </ScrollArea>
+            </div>
           )}
           </ScrollArea>
 
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0 px-4 pb-4 sm:px-6 sm:pb-6 pt-2 flex-shrink-0">
             {generatedContent ? (
               <>
-                <Button variant="outline" onClick={() => setGeneratedContent(null)} className="w-full sm:w-auto">
+                <Button variant="outline" onClick={() => { setGeneratedContent(null); setIsSaved(false); }} className="w-full sm:w-auto">
                   {t("ai:regenerate")}
                 </Button>
-                <Button onClick={handleSaveDocument} className="w-full sm:w-auto">
+                <Button onClick={() => { setIsDialogOpen(false); navigate("/my-documents"); }} className="w-full sm:w-auto">
                   {t("ai:save_to_documents")}
                 </Button>
               </>
