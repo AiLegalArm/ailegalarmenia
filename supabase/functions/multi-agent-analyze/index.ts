@@ -58,7 +58,14 @@ You do NOT perform tasks outside this scope.
 - Do not add extra keys beyond the schema.
 - Never invent: laws, article numbers, case numbers, quotes, dates, entities.
 - If a legal reference cannot be verified via RAG -> do NOT cite it. Put the issue into warnings/data_gaps.
-- For missing information: use null (for scalar fields) and [] (for arrays) and record in data_gaps.`;
+- For missing information: use null (for scalar fields) and [] (for arrays) and record in data_gaps.
+
+## LANGUAGE RULE (MANDATORY)
+
+- ALL text output — including summary, analysis, findings descriptions, recommendations, and disclaimers — MUST be written in Armenian (\u0540\u0561\u0575\u0565\u0580\u0565\u0576).
+- Legal citations (article numbers, case identifiers) should remain in their original form.
+- JSON keys remain in English. Only JSON string VALUES must be in Armenian.
+- This rule is NON-NEGOTIABLE and applies to every field in the output.`;
 
 // Helper to avoid human error when composing prompts
 const buildPrompt = (agentName: string, role: string, body: string) =>
@@ -724,7 +731,7 @@ serve(async (req) => {
       }
 
       const agentSystemPrompt = (AGENT_PROMPTS[agentType as keyof typeof AGENT_PROMPTS] || AGENT_PROMPTS.evidence_collector) +
-        "\n\nYou are receiving per-file analyses done earlier by this same agent. Your task is to SYNTHESIZE them into a single comprehensive report. Merge findings, remove duplicates, and produce a unified analysis.\n";
+        "\n\nYou are receiving per-file analyses done earlier by this same agent. Your task is to SYNTHESIZE them into a single comprehensive report. Merge findings, remove duplicates, and produce a unified analysis.\nREMINDER: ALL output text MUST be in Armenian (\u0540\u0561\u0575\u0565\u0580\u0565\u0576). JSON keys stay in English, values in Armenian.\n";
 
       const { callText } = await import("../_shared/openai-router.ts");
       const synthResult = await callText("multi-agent-analyze", [

@@ -242,15 +242,18 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
               return (
                 <Card 
                   key={agent.type}
-                  className={`transition-all duration-300 w-14 sm:w-auto shrink-0 ${
+                  className={`transition-all duration-300 w-[4.5rem] sm:w-auto shrink-0 cursor-pointer ${
                     isCurrentAgent
                       ? "ring-2 ring-primary shadow-lg shadow-primary/25 animate-pulse scale-105"
                       : ""
                   } ${status === "completed" ? "bg-accent/50 ring-1 ring-green-500/30" : ""} ${status === "failed" ? "ring-1 ring-destructive/30" : ""} ${isSelected ? "ring-2 ring-primary/60" : ""}`}
+                  onClick={() => {
+                    if (!isLoading) runAgent(caseId, agent.type, referencesText || undefined);
+                  }}
                 >
-                  <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[52px] sm:min-h-[60px] relative overflow-hidden">
+                  <CardContent className="p-1.5 sm:p-2 text-center flex flex-col items-center justify-center h-full min-h-[60px] sm:min-h-[68px] relative overflow-hidden">
                     {/* Checkbox */}
-                    <div className="absolute top-0.5 left-0.5 z-20">
+                    <div className="absolute top-0.5 left-0.5 z-20" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => toggleAgent(agent.type)}
@@ -261,8 +264,7 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                       <div className="absolute inset-0 bg-primary/10 animate-[pulse_1.5s_ease-in-out_infinite]" />
                     )}
                     <div 
-                      className={`text-sm sm:text-lg mb-0.5 relative z-10 cursor-pointer ${isCurrentAgent ? "animate-bounce" : ""}`}
-                      onClick={() => !isLoading && runAgent(caseId, agent.type, referencesText || undefined)}
+                      className={`text-sm sm:text-lg mb-0.5 relative z-10 ${isCurrentAgent ? "animate-bounce" : ""}`}
                     >
                       {agent.icon}
                     </div>
@@ -273,7 +275,7 @@ export function MultiAgentPanel({ caseId, caseFacts, caseType, partyRole }: Mult
                       {isCurrentAgent ? (
                         <Loader2 className="h-3 w-3 animate-spin text-primary" />
                       ) : status ? getStatusIcon(status) : (
-                        <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-muted" />
+                        <Play className="h-2 w-2 sm:h-2.5 sm:w-2.5 text-muted-foreground" />
                       )}
                     </div>
                   </CardContent>
