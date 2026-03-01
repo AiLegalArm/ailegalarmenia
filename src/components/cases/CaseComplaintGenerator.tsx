@@ -292,15 +292,44 @@ export function CaseComplaintGenerator({
         requestBody.referencesText = currentRefsText;
       }
 
-      const { data, error } = await supabase.functions.invoke("generate-complaint", {
-        body: requestBody
-      });
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const sessionData = await supabase.auth.getSession();
+      const accessToken = sessionData.data.session?.access_token;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 310_000);
+
+      let data: Record<string, unknown>;
+      try {
+        const res = await fetch(`${supabaseUrl}/functions/v1/generate-complaint`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${accessToken || supabaseKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`Edge function returned ${res.status}: ${errBody}`);
+        }
+        data = await res.json();
+      } catch (e: unknown) {
+        clearTimeout(timeoutId);
+        if (e instanceof DOMException && e.name === "AbortError") {
+          throw new Error("Request timed out after 5 minutes");
+        }
+        throw e;
+      }
 
       setState(prev => ({ ...prev, progress: 90 }));
 
-      if (error) throw error;
-
-      const content = data?.content || data?.complaint || "";
+      const content = (data?.content || data?.complaint || "") as string;
       
       if (!content) {
         throw new Error("No content generated");
