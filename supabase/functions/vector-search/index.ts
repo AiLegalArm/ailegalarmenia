@@ -32,7 +32,10 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      db: { schema: "public" },
+      global: { headers: { "x-statement-timeout": "8000" } },
+    });
 
     const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 30);
     const candidateLimit = Math.min(safeLimit * 3, 50);
@@ -186,7 +189,7 @@ async function keywordSearchKB(
 
   // 2. Individual word search
   const words = query.split(/\s+/).filter(w => w.length >= 2);
-  for (const word of words.slice(0, 5)) {
+  for (const word of words.slice(0, 2)) {
     if (results.size >= limit) break;
     const wordParams: Record<string, unknown> = { search_query: word, result_limit: Math.min(10, limit) };
     if (referenceDate) wordParams.reference_date = referenceDate;
