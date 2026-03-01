@@ -108,12 +108,6 @@ function selectBoldFont(doc: jsPDF, text: string, hasArmenianFont: boolean): voi
   doc.setTextColor(0, 0, 0);
 }
 
-/** Draw text twice with a tiny offset for extra visual weight */
-function drawBoldText(doc: jsPDF, text: string | string[], x: number, y: number, options?: { align?: string }): void {
-  doc.setTextColor(0, 0, 0);
-  doc.text(text as any, x, y, options as any);
-  doc.text(text as any, x + 0.2, y, options as any);
-}
 
 // Helper function to add header with case number and export date
 function addHeader(doc: jsPDF, caseNumber: string, exportDate: Date, language: "hy" | "en" = "hy", hasArmenianFont: boolean = false, logoData?: string | null) {
@@ -268,7 +262,7 @@ export async function exportAnalysisToPDF(data: AnalysisExportData): Promise<voi
       selectBoldFont(doc, line, hasArmenianFont);
     }
     doc.setTextColor(0, 0, 0);
-    drawBoldText(doc, line, margin, yPosition);
+    doc.text(line, margin, yPosition);
     yPosition += 7;
   }
   
