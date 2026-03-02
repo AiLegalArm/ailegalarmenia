@@ -16,7 +16,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-const LIVE_URL = "https://nrmmgcgwriyrlbcpoqvk.supabase.co";
+// Live DB connection is handled server-side via LIVE_SUPABASE_URL secret
 
 type SyncTable = "knowledge_base" | "legal_practice_kb";
 
@@ -98,7 +98,6 @@ export function DataSyncToLive() {
             table: selectedTable,
             offset: prog.offset,
             batchSize: 5,
-            liveUrl: LIVE_URL,
           },
         });
 
@@ -150,7 +149,6 @@ export function DataSyncToLive() {
               table: selectedTable,
               offset: prog.offset,
               batchSize: 3,
-              liveUrl: LIVE_URL,
             },
           });
 
@@ -315,8 +313,8 @@ export function DataSyncToLive() {
         )}
 
         <p className="text-xs text-muted-foreground">
-          ⚠️ Перед использованием необходимо опубликовать проект, чтобы функция
-          была доступна в Live-среде. Батчи по 5 записей (~125KB с эмбеддингами).
+          ⚠️ Убедитесь, что секреты LIVE_SUPABASE_URL и LIVE_SUPABASE_SERVICE_KEY настроены.
+          Батчи по 5 записей (~125KB с эмбеддингами).
         </p>
       </CardContent>
     </Card>

@@ -1,14 +1,15 @@
 /**
  * data-sync-to-live — Sync knowledge_base and legal_practice_kb from Test → Live.
  *
- * Modes:
- *   - export: Read batch from local DB, POST to Live's import endpoint
- *   - import: Receive batch, dedup & insert into local DB
- *   - export-embeddings: Read records with embeddings, POST to Live for update
- *   - update-embeddings: Receive embedding updates, apply to matching records
- *   - status: Count records
+ * Directly connects to Live DB using LIVE_SUPABASE_URL + LIVE_SUPABASE_SERVICE_KEY.
+ * No need for the function to exist in Live environment.
  *
- * Auth: x-internal-key OR service role Bearer OR admin JWT
+ * Modes:
+ *   - export: Read batch from Test DB, insert directly into Live DB
+ *   - export-embeddings: Read embeddings from Test, update in Live DB
+ *   - status: Count records in Test
+ *
+ * Auth: service role Bearer OR admin JWT
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -28,18 +29,15 @@ function json(data: unknown, status = 200) {
 }
 
 async function authenticate(req: Request): Promise<boolean> {
-  // 1. Internal key (edge-to-edge)
   const internalKey = req.headers.get("x-internal-key");
   const expectedKey = Deno.env.get("INTERNAL_INGEST_KEY");
   if (internalKey && expectedKey && internalKey === expectedKey) return true;
 
-  // 2. Service role key as Bearer
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "").trim();
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (token && serviceKey && token === serviceKey) return true;
 
-  // 3. Admin JWT
   if (token) {
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -48,8 +46,7 @@ async function authenticate(req: Request): Promise<boolean> {
     );
     const { data: userData } = await sb.auth.getUser(token);
     if (userData?.user) {
-      // Check admin role
-      const { data: roles } = await getServiceClient()
+      const { data: roles } = await getTestClient()
         .from("user_roles")
         .select("role")
         .eq("user_id", userData.user.id)
@@ -62,11 +59,20 @@ async function authenticate(req: Request): Promise<boolean> {
   return false;
 }
 
-function getServiceClient() {
+function getTestClient() {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+}
+
+function getLiveClient() {
+  const liveUrl = Deno.env.get("LIVE_SUPABASE_URL");
+  const liveKey = Deno.env.get("LIVE_SUPABASE_SERVICE_KEY");
+  if (!liveUrl || !liveKey) {
+    throw new Error("LIVE_SUPABASE_URL and LIVE_SUPABASE_SERVICE_KEY must be set");
+  }
+  return createClient(liveUrl, liveKey);
 }
 
 // ─── Columns ───────────────────────────────────────────────────────────────
@@ -85,18 +91,13 @@ const PRACTICE_COLUMNS = [
   "jurisdiction", "echr_case_id",
 ];
 
-// ─── Export: read batch, send to Live ──────────────────────────────────────
-async function handleExport(
-  table: string,
-  offset: number,
-  batchSize: number,
-  liveUrl: string,
-) {
-  const sb = getServiceClient();
+// ─── Export: read from Test, insert directly into Live ────────────────────
+async function handleExport(table: string, offset: number, batchSize: number) {
+  const testDb = getTestClient();
+  const liveDb = getLiveClient();
   const columns = table === "knowledge_base" ? KB_COLUMNS : PRACTICE_COLUMNS;
-  const internalKey = Deno.env.get("INTERNAL_INGEST_KEY")!;
 
-  const { data, error, count } = await sb
+  const { data, error, count } = await testDb
     .from(table)
     .select(columns.join(","), { count: "exact" })
     .range(offset, offset + batchSize - 1)
@@ -107,70 +108,37 @@ async function handleExport(
     return json({ done: true, totalCount: count, offset, synced: 0 });
   }
 
-  // Send to Live
-  const importUrl = `${liveUrl}/functions/v1/data-sync-to-live`;
-  const res = await fetch(importUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-key": internalKey,
-    },
-    body: JSON.stringify({ mode: "import", table, records: data }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    return json({ error: `Live import failed: ${res.status} ${errText.substring(0, 500)}` }, 500);
-  }
-
-  const result = await res.json();
-  return json({
-    done: false,
-    offset,
-    batchSize: data.length,
-    totalCount: count,
-    nextOffset: offset + batchSize,
-    importResult: result,
-  });
-}
-
-// ─── Import: dedup & insert ────────────────────────────────────────────────
-async function handleImport(table: string, records: Record<string, unknown>[]) {
-  const sb = getServiceClient();
+  // Dedup & insert into Live
   let inserted = 0;
   let skipped = 0;
   const errors: string[] = [];
-  const columns = table === "knowledge_base" ? KB_COLUMNS : PRACTICE_COLUMNS;
 
-  for (const record of records) {
+  for (const record of data) {
     try {
       const title = record.title as string;
 
-      // Dedup check
+      // Dedup check in Live
       let existing: unknown[] | null = null;
       if (table === "knowledge_base") {
-        const { data } = await sb
-          .from(table)
-          .select("id")
+        const { data: ex } = await liveDb
+          .from(table).select("id")
           .eq("title", title)
           .eq("category", record.category as string)
           .limit(1);
-        existing = data;
+        existing = ex;
       } else {
         if (record.content_hash) {
-          const { data } = await sb
-            .from(table)
-            .select("id")
+          const { data: ex } = await liveDb
+            .from(table).select("id")
             .eq("content_hash", record.content_hash as string)
             .limit(1);
-          existing = data;
+          existing = ex;
         } else {
-          const { data } = await sb
-            .from(table)
-            .select("id")
+          const { data: ex } = await liveDb
+            .from(table).select("id")
             .eq("title", title)
             .limit(1);
-          existing = data;
+          existing = ex;
         }
       }
 
@@ -187,7 +155,7 @@ async function handleImport(table: string, records: Record<string, unknown>[]) {
         }
       }
 
-      const { error: insertError } = await sb.from(table).insert(clean);
+      const { error: insertError } = await liveDb.from(table).insert(clean);
       if (insertError) {
         errors.push(`${(title || "").substring(0, 50)}: ${insertError.message}`);
       } else {
@@ -198,22 +166,23 @@ async function handleImport(table: string, records: Record<string, unknown>[]) {
     }
   }
 
-  return json({ inserted, skipped, errors: errors.slice(0, 20) });
+  return json({
+    done: false,
+    offset,
+    batchSize: data.length,
+    totalCount: count,
+    nextOffset: offset + batchSize,
+    importResult: { inserted, skipped, errors: errors.slice(0, 20) },
+  });
 }
 
-// ─── Export Embeddings: read records with embeddings, send for update ──────
-async function handleExportEmbeddings(
-  table: string,
-  offset: number,
-  batchSize: number,
-  liveUrl: string,
-) {
-  const sb = getServiceClient();
-  const internalKey = Deno.env.get("INTERNAL_INGEST_KEY")!;
-
+// ─── Export Embeddings: read from Test, update in Live ─────────────────────
+async function handleExportEmbeddings(table: string, offset: number, batchSize: number) {
+  const testDb = getTestClient();
+  const liveDb = getLiveClient();
   const dedupCol = table === "knowledge_base" ? "category" : "practice_category";
 
-  const { data, error, count } = await sb
+  const { data, error, count } = await testDb
     .from(table)
     .select(`title,${dedupCol},content_hash,embedding,embedding_status`, { count: "exact" })
     .not("embedding", "is", null)
@@ -225,83 +194,41 @@ async function handleExportEmbeddings(
     return json({ done: true, totalCount: count, offset, updated: 0 });
   }
 
-  const importUrl = `${liveUrl}/functions/v1/data-sync-to-live`;
-  const res = await fetch(importUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-key": internalKey,
-    },
-    body: JSON.stringify({ mode: "update-embeddings", table, records: data }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    return json({ error: `Live update failed: ${res.status} ${errText.substring(0, 500)}` }, 500);
-  }
-
-  const result = await res.json();
-  return json({
-    done: false,
-    offset,
-    batchSize: data.length,
-    totalCount: count,
-    nextOffset: offset + batchSize,
-    updateResult: result,
-  });
-}
-
-// ─── Update Embeddings: match by title+category, update embedding ──────────
-async function handleUpdateEmbeddings(table: string, records: Record<string, unknown>[]) {
-  const sb = getServiceClient();
   let updated = 0;
-  let notFound = 0;
   const errors: string[] = [];
 
-  for (const record of records) {
+  for (const record of data) {
     try {
       const title = record.title as string;
-      let query;
+      const updatePayload = {
+        embedding: record.embedding,
+        embedding_status: record.embedding_status || "done",
+      };
 
+      let result;
       if (table === "knowledge_base") {
-        query = sb
+        result = await liveDb
           .from(table)
-          .update({
-            embedding: record.embedding,
-            embedding_status: record.embedding_status || "done",
-          })
+          .update(updatePayload)
           .eq("title", title)
           .eq("category", record.category as string)
           .is("embedding", null);
+      } else if (record.content_hash) {
+        result = await liveDb
+          .from(table)
+          .update(updatePayload)
+          .eq("content_hash", record.content_hash as string)
+          .is("embedding", null);
       } else {
-        // Match by content_hash or title
-        if (record.content_hash) {
-          query = sb
-            .from(table)
-            .update({
-              embedding: record.embedding,
-              embedding_status: record.embedding_status || "done",
-            })
-            .eq("content_hash", record.content_hash as string)
-            .is("embedding", null);
-        } else {
-          query = sb
-            .from(table)
-            .update({
-              embedding: record.embedding,
-              embedding_status: record.embedding_status || "done",
-            })
-            .eq("title", title)
-            .is("embedding", null);
-        }
+        result = await liveDb
+          .from(table)
+          .update(updatePayload)
+          .eq("title", title)
+          .is("embedding", null);
       }
 
-      const { error: updateError, count } = await query.select("id", { count: "exact", head: true });
-
-      // Use a simpler approach - just do the update
-      const { error: err2 } = await query;
-      if (err2) {
-        errors.push(`${(title || "").substring(0, 50)}: ${err2.message}`);
+      if (result.error) {
+        errors.push(`${(title || "").substring(0, 50)}: ${result.error.message}`);
       } else {
         updated++;
       }
@@ -310,18 +237,25 @@ async function handleUpdateEmbeddings(table: string, records: Record<string, unk
     }
   }
 
-  return json({ updated, notFound, errors: errors.slice(0, 20) });
+  return json({
+    done: false,
+    offset,
+    batchSize: data.length,
+    totalCount: count,
+    nextOffset: offset + batchSize,
+    updateResult: { updated, errors: errors.slice(0, 20) },
+  });
 }
 
 // ─── Status ────────────────────────────────────────────────────────────────
 async function handleStatus(table: string) {
-  const sb = getServiceClient();
+  const testDb = getTestClient();
 
-  const { count: total } = await sb
+  const { count: total } = await testDb
     .from(table)
     .select("id", { count: "exact", head: true });
 
-  const { count: withEmbedding } = await sb
+  const { count: withEmbedding } = await testDb
     .from(table)
     .select("id", { count: "exact", head: true })
     .not("embedding", "is", null);
@@ -349,25 +283,17 @@ serve(async (req) => {
 
     switch (mode) {
       case "export": {
-        const { offset = 0, batchSize = 5, liveUrl } = body;
-        if (!liveUrl) return json({ error: "liveUrl required" }, 400);
-        return handleExport(table, offset, batchSize, liveUrl);
+        const { offset = 0, batchSize = 5 } = body;
+        return handleExport(table, offset, batchSize);
       }
-      case "import":
-        if (!body.records?.length) return json({ error: "records required" }, 400);
-        return handleImport(table, body.records);
       case "export-embeddings": {
-        const { offset = 0, batchSize = 5, liveUrl } = body;
-        if (!liveUrl) return json({ error: "liveUrl required" }, 400);
-        return handleExportEmbeddings(table, offset, batchSize, liveUrl);
+        const { offset = 0, batchSize = 3 } = body;
+        return handleExportEmbeddings(table, offset, batchSize);
       }
-      case "update-embeddings":
-        if (!body.records?.length) return json({ error: "records required" }, 400);
-        return handleUpdateEmbeddings(table, body.records);
       case "status":
         return handleStatus(table);
       default:
-        return json({ error: "Invalid mode" }, 400);
+        return json({ error: "Invalid mode. Use: export, export-embeddings, status" }, 400);
     }
   } catch (e) {
     console.error("[data-sync-to-live] error:", e);
