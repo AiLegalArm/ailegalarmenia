@@ -6,12 +6,14 @@
  *   2. Embedding → practice-embed-worker
  *   3. Enrichment → practice-ai-enrich-worker
  * 
- * Priority: chunk > embed > enrich (only one stage per invocation).
+ * Priority: chunk > embed > enrich.
  * Auth: x-internal-key (INTERNAL_INGEST_KEY or CRON_WORKER_KEY).
+ * 
+ * NOTE: Does NOT count pending jobs via PostgREST (schema cache unreliable).
+ * Instead, calls workers directly — they use claim_pipeline_jobs RPC internally.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors, validateInternalRequest, buildInternalHeaders } from "../_shared/edge-security.ts";
 
 serve(async (req) => {
@@ -25,68 +27,50 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    // Use RPC to count pending jobs — avoids PostgREST schema cache issues
-    const { data: counts, error: rpcErr } = await supabase.rpc("pipeline_pending_counts");
-    
-    if (rpcErr) {
-      console.error("[pipeline-orchestrator] RPC error:", rpcErr.message);
-      // Fallback: try direct table query
-      const { count: embedFallback } = await supabase
-        .from("practice_chunk_jobs")
-        .select("*", { count: "exact", head: true })
-        .eq("job_type", "embed")
-        .eq("status", "pending");
-      
-      console.log(`[pipeline-orchestrator] fallback embed count: ${embedFallback}`);
-    }
-
-    const chunkPending = counts?.chunk_pending ?? 0;
-    const embedPending = counts?.embed_pending ?? 0;
-    const enrichPending = counts?.enrich_pending ?? 0;
-
-    let stageTriggered = "idle";
-    let workerResponse: Record<string, unknown> | null = null;
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
-    const callWorker = async (functionName: string): Promise<Record<string, unknown>> => {
+    const callWorker = async (functionName: string): Promise<{ data: Record<string, unknown>; status: number }> => {
       const url = `${supabaseUrl}/functions/v1/${functionName}`;
       const headers = buildInternalHeaders();
       const res = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ concurrency_docs: 50 }),
+        body: JSON.stringify({ concurrency_docs: 25 }),
       });
-      const data = await res.json().catch(() => ({ status: res.status }));
-      return data;
+      const data = await res.json().catch(() => ({ raw_status: res.status }));
+      return { data, status: res.status };
     };
 
-    // Priority dispatch
-    if (chunkPending > 0) {
+    let stageTriggered = "idle";
+    let workerResponse: Record<string, unknown> | null = null;
+
+    // 1) Chunk
+    const chunkResult = await callWorker("practice-chunk-worker");
+    if (chunkResult.status === 200 && (chunkResult.data?.picked ?? 0) > 0) {
       stageTriggered = "chunk";
-      workerResponse = await callWorker("practice-chunk-worker");
-    } else if (embedPending > 0) {
-      stageTriggered = "embed";
-      workerResponse = await callWorker("practice-embed-worker");
-    } else if (enrichPending > 0) {
-      stageTriggered = "enrich";
-      workerResponse = await callWorker("practice-ai-enrich-worker");
+      workerResponse = chunkResult.data;
+    } else {
+      // 2) Embed
+      const embedResult = await callWorker("practice-embed-worker");
+      if (embedResult.status === 200 && (embedResult.data?.picked ?? 0) > 0) {
+        stageTriggered = "embed";
+        workerResponse = embedResult.data;
+      } else {
+        // 3) Enrich
+        const enrichResult = await callWorker("practice-ai-enrich-worker");
+        if (enrichResult.status === 200 && (enrichResult.data?.picked ?? 0) > 0) {
+          stageTriggered = "enrich";
+          workerResponse = enrichResult.data;
+        }
+      }
     }
 
     const duration = Date.now() - startTime;
     console.log(
-      `[pipeline-orchestrator] chunk=${chunkPending} embed=${embedPending} enrich=${enrichPending} stage=${stageTriggered} duration=${duration}ms`,
+      `[pipeline-orchestrator] stage=${stageTriggered} duration=${duration}ms result=${JSON.stringify(workerResponse ?? {}).slice(0, 200)}`,
     );
 
     return new Response(JSON.stringify({
-      chunk_pending: chunkPending,
-      embed_pending: embedPending,
-      enrich_pending: enrichPending,
       stage_triggered: stageTriggered,
       worker_result: workerResponse,
       duration_ms: duration,
