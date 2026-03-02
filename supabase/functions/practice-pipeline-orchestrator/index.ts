@@ -30,45 +30,24 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Count pending jobs by type
-    const [chunkRes, embedRes, enrichRes] = await Promise.all([
-      supabase
+    // Use RPC to count pending jobs — avoids PostgREST schema cache issues
+    const { data: counts, error: rpcErr } = await supabase.rpc("pipeline_pending_counts");
+    
+    if (rpcErr) {
+      console.error("[pipeline-orchestrator] RPC error:", rpcErr.message);
+      // Fallback: try direct table query
+      const { count: embedFallback } = await supabase
         .from("practice_chunk_jobs")
-        .select("id", { count: "exact", head: true })
-        .eq("job_type", "chunk")
-        .in("status", ["pending", "failed"])
-        .lt("attempts", 5)
-        .lte("next_run_at", new Date().toISOString()),
-      supabase
-        .from("practice_chunk_jobs")
-        .select("id", { count: "exact", head: true })
+        .select("*", { count: "exact", head: true })
         .eq("job_type", "embed")
-        .in("status", ["pending", "failed"])
-        .lt("attempts", 5)
-        .lte("next_run_at", new Date().toISOString()),
-      supabase
-        .from("practice_chunk_jobs")
-        .select("id", { count: "exact", head: true })
-        .eq("job_type", "enrich")
-        .in("status", ["pending", "failed"])
-        .lt("attempts", 5)
-        .lte("next_run_at", new Date().toISOString()),
-    ]);
+        .eq("status", "pending");
+      
+      console.log(`[pipeline-orchestrator] fallback embed count: ${embedFallback}`);
+    }
 
-    // Also count stale processing jobs (lease expired)
-    const now = new Date().toISOString();
-    const [chunkStale, embedStale, enrichStale] = await Promise.all([
-      supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true })
-        .eq("job_type", "chunk").eq("status", "processing").lt("lease_expires_at", now),
-      supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true })
-        .eq("job_type", "embed").eq("status", "processing").lt("lease_expires_at", now),
-      supabase.from("practice_chunk_jobs").select("id", { count: "exact", head: true })
-        .eq("job_type", "enrich").eq("status", "processing").lt("lease_expires_at", now),
-    ]);
-
-    const chunkPending = (chunkRes.count || 0) + (chunkStale.count || 0);
-    const embedPending = (embedRes.count || 0) + (embedStale.count || 0);
-    const enrichPending = (enrichRes.count || 0) + (enrichStale.count || 0);
+    const chunkPending = counts?.chunk_pending ?? 0;
+    const embedPending = counts?.embed_pending ?? 0;
+    const enrichPending = counts?.enrich_pending ?? 0;
 
     let stageTriggered = "idle";
     let workerResponse: Record<string, unknown> | null = null;
