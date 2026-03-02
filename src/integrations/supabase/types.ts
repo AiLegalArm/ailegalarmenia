@@ -2378,37 +2378,69 @@ export type Database = {
           source_table: string
         }[]
       }
-      claim_pipeline_jobs: {
-        Args: {
-          p_job_type: string
-          p_lease_minutes?: number
-          p_limit?: number
-          p_source_table?: string
-        }
-        Returns: {
-          attempts: number
-          completed_at: string | null
-          created_at: string
-          document_id: string
-          id: string
-          job_type: string
-          last_error: string | null
-          lease_expires_at: string | null
-          max_attempts: number
-          next_run_at: string | null
-          source_table: string
-          started_at: string | null
-          status: string
-          updated_at: string
-          worker_id: string | null
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "practice_chunk_jobs"
-          isOneToOne: false
-          isSetofReturn: true
-        }
-      }
+      claim_pipeline_jobs:
+        | {
+            Args: {
+              p_job_type: string
+              p_lease_minutes?: number
+              p_limit?: number
+              p_source_table?: string
+            }
+            Returns: {
+              attempts: number
+              completed_at: string | null
+              created_at: string
+              document_id: string
+              id: string
+              job_type: string
+              last_error: string | null
+              lease_expires_at: string | null
+              max_attempts: number
+              next_run_at: string | null
+              source_table: string
+              started_at: string | null
+              status: string
+              updated_at: string
+              worker_id: string | null
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "practice_chunk_jobs"
+              isOneToOne: false
+              isSetofReturn: true
+            }
+          }
+        | {
+            Args: {
+              p_job_type: string
+              p_lease_minutes?: number
+              p_limit?: number
+              p_source_table?: string
+            }
+            Returns: {
+              attempts: number
+              completed_at: string | null
+              created_at: string
+              document_id: string
+              id: string
+              job_type: string
+              last_error: string | null
+              lease_expires_at: string | null
+              max_attempts: number
+              next_run_at: string | null
+              source_table: string
+              started_at: string | null
+              status: string
+              updated_at: string
+              worker_id: string | null
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "practice_chunk_jobs"
+              isOneToOne: false
+              isSetofReturn: true
+            }
+          }
       count_kb_docs_without_chunks: { Args: never; Returns: number }
       decrypt_pii: {
         Args: { _field_name: string; _user_id: string }
@@ -2637,6 +2669,7 @@ export type Database = {
         }[]
       }
       normalize_hy: { Args: { input: string }; Returns: string }
+      pipeline_pending_counts: { Args: never; Returns: Json }
       retrieve_decrypted_pii: {
         Args: { p_field_name: string; p_user_id: string }
         Returns: string
