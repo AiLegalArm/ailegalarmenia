@@ -2630,6 +2630,7 @@ export type Database = {
       }
       normalize_hy: { Args: { input: string }; Returns: string }
       pipeline_pending_counts: { Args: never; Returns: Json }
+      release_pipeline_lock: { Args: never; Returns: undefined }
       retrieve_decrypted_pii: {
         Args: { p_field_name: string; p_user_id: string }
         Returns: string
@@ -2738,6 +2739,7 @@ export type Database = {
         Args: { p_field_name: string; p_user_id: string; p_value: string }
         Returns: boolean
       }
+      try_acquire_pipeline_lock: { Args: never; Returns: boolean }
       user_can_access_case: { Args: { _case_id: string }; Returns: boolean }
       user_can_access_case_as: {
         Args: { _case_id: string; _user_id: string }

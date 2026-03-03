@@ -8,13 +8,17 @@
  * 
  * Priority: chunk > embed > enrich.
  * Auth: x-internal-key (INTERNAL_INGEST_KEY or CRON_WORKER_KEY).
+ * 
+ * Concurrency: Uses pg_try_advisory_lock to prevent overlapping runs.
+ * Tracing: Generates a pipeline_run_id propagated to all workers via x-request-id.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors, validateInternalRequest, buildInternalHeaders } from "../_shared/edge-security.ts";
 
-const WORKER_TIMEOUT_MS = 25_000; // 25s per worker call
-const RETRY_DELAY_MS = 3_000;     // 3s before retry
+const WORKER_TIMEOUT_MS = 25_000;
+const RETRY_DELAY_MS = 3_000;
 const MAX_RETRIES = 1;
 
 interface WorkerResult {
@@ -46,50 +50,70 @@ serve(async (req) => {
   if (authErr) return authErr;
 
   const startTime = Date.now();
+  const pipelineRunId = `run_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabase = createClient(
+      supabaseUrl,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // ── Concurrency guard: advisory lock ─────────────────────────────
+    const { data: lockAcquired, error: lockErr } = await supabase.rpc("try_acquire_pipeline_lock");
+    
+    if (lockErr) {
+      console.warn(`[pipeline-orchestrator] lock RPC error: ${lockErr.message}`);
+      // Proceed without lock on RPC failure (graceful degradation)
+    } else if (lockAcquired === false) {
+      console.log(`[pipeline-orchestrator] run=${pipelineRunId} skipped: another orchestrator is running`);
+      return new Response(JSON.stringify({
+        stage_triggered: "skipped_concurrent",
+        pipeline_run_id: pipelineRunId,
+        duration_ms: Date.now() - startTime,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const callWorker = async (functionName: string, attempt = 0): Promise<WorkerResult> => {
       const url = `${supabaseUrl}/functions/v1/${functionName}`;
-      const headers = buildInternalHeaders();
+      const headers = buildInternalHeaders({ "x-request-id": pipelineRunId });
       try {
         const res = await fetchWithTimeout(url, {
           method: "POST",
           headers,
-          body: JSON.stringify({ concurrency_docs: 25 }),
+          body: JSON.stringify({ concurrency_docs: 25, pipeline_run_id: pipelineRunId }),
         }, WORKER_TIMEOUT_MS);
 
         const rawText = await res.text();
         
-        // Handle HTML error pages (522, 503, etc.)
         if (isHtmlResponse(rawText)) {
           const errMsg = `${functionName} returned HTML (likely 522/503), status=${res.status}`;
-          console.warn(`[pipeline-orchestrator] ${errMsg}`);
+          console.warn(`[pipeline-orchestrator] run=${pipelineRunId} ${errMsg}`);
           
           if (attempt < MAX_RETRIES) {
-            console.log(`[pipeline-orchestrator] Retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
+            console.log(`[pipeline-orchestrator] run=${pipelineRunId} retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
             await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
             return callWorker(functionName, attempt + 1);
           }
           return { data: { picked: 0 }, status: res.status, error: errMsg };
         }
 
-        // Parse JSON
         try {
           const data = JSON.parse(rawText);
           return { data, status: res.status };
         } catch {
-          console.warn(`[pipeline-orchestrator] ${functionName} returned non-JSON: ${rawText.slice(0, 200)}`);
+          console.warn(`[pipeline-orchestrator] run=${pipelineRunId} ${functionName} non-JSON: ${rawText.slice(0, 200)}`);
           return { data: { picked: 0 }, status: res.status, error: "non-JSON response" };
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const isTimeout = msg.includes("aborted") || msg.includes("abort");
-        console.warn(`[pipeline-orchestrator] ${functionName} fetch error: ${msg}`);
+        console.warn(`[pipeline-orchestrator] run=${pipelineRunId} ${functionName} fetch error: ${msg}`);
         
         if (!isTimeout && attempt < MAX_RETRIES) {
-          console.log(`[pipeline-orchestrator] Retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
+          console.log(`[pipeline-orchestrator] run=${pipelineRunId} retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
           return callWorker(functionName, attempt + 1);
         }
@@ -121,19 +145,27 @@ serve(async (req) => {
       }
     }
 
+    // ── Release advisory lock ────────────────────────────────────────
+    if (lockAcquired === true) {
+      await supabase.rpc("release_pipeline_lock").catch((e: Error) => {
+        console.warn(`[pipeline-orchestrator] run=${pipelineRunId} lock release failed: ${e.message}`);
+      });
+    }
+
     const duration = Date.now() - startTime;
     const errors = Object.entries(results)
       .filter(([, r]) => r.error)
       .map(([name, r]) => `${name}: ${r.error}`);
 
     console.log(
-      `[pipeline-orchestrator] stage=${stageTriggered} duration=${duration}ms` +
+      `[pipeline-orchestrator] run=${pipelineRunId} stage=${stageTriggered} duration=${duration}ms` +
       (errors.length > 0 ? ` errors=[${errors.join("; ")}]` : "") +
       ` results=${JSON.stringify(Object.fromEntries(Object.entries(results).map(([k, v]) => [k, { picked: v.data?.picked, status: v.status }]))).slice(0, 300)}`,
     );
 
     return new Response(JSON.stringify({
       stage_triggered: stageTriggered,
+      pipeline_run_id: pipelineRunId,
       results: Object.fromEntries(
         Object.entries(results).map(([k, v]) => [k, { picked: v.data?.picked ?? 0, status: v.status, error: v.error }])
       ),
@@ -144,8 +176,8 @@ serve(async (req) => {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[pipeline-orchestrator] fatal error:", msg);
-    return new Response(JSON.stringify({ error: msg }), {
+    console.error(`[pipeline-orchestrator] run=${pipelineRunId} fatal: ${msg}`);
+    return new Response(JSON.stringify({ error: msg, pipeline_run_id: pipelineRunId }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
