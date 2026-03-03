@@ -283,6 +283,24 @@ serve(async (req) => {
     const { role, moduleId, caseId, caseFacts, legalQuestion, advocateResponse, prosecutorResponse, judgeResponse, referencesText, oldLawText, newLawText, strict_temporal: strictTemporal, fileId, fileAnalyses } =
       (await req.json()) as AnalysisRequest;
 
+    // === CASE ACCESS VERIFICATION (P0: Prevent cross-case data leakage) ===
+    // Uses the AUTH client (user JWT, subject to RLS) — not service_role
+    if (caseId) {
+      const { data: caseAccess, error: caseAccessErr } = await authClient
+        .from("cases")
+        .select("id")
+        .eq("id", caseId)
+        .maybeSingle();
+      
+      if (caseAccessErr || !caseAccess) {
+        console.warn(`[ai-analyze] Case access denied: user=${user.id} case=${caseId} error=${caseAccessErr?.message || "not found"}`);
+        return new Response(
+          JSON.stringify({ error: "Case not found or access denied" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+    // === END CASE ACCESS VERIFICATION ===
     // Validate role - support both legacy roles and new analysis types
     const legacyRoles = ["advocate", "prosecutor", "judge", "aggregator", "criminal_module", "precedent_citation", "deadline_rules", "legal_position_comparator", "hallucination_audit", "draft_deterministic", "strategy_builder", "evidence_weakness", "risk_factors", "law_update_summary", "cross_exam"];
     const isLegacyRole = legacyRoles.includes(role);
@@ -779,10 +797,10 @@ serve(async (req) => {
 
 ${partyContextBlock}
 ### Case Facts:
-${caseFacts || "Not provided"}
+${sandboxUserInput("CASE_FACTS", caseFacts || "Not provided")}
 
 ### Legal Question:
-${legalQuestion || "Not provided"}
+${sandboxUserInput("LEGAL_QUESTION", legalQuestion || "Not provided")}
 
 ${caseFilesContext}
 
@@ -794,13 +812,13 @@ ${userSourcesBlock}
 ## Previous Role Analyses:
 
 ### Advocate (Defense) Analysis:
-${advocateResponse || "Not available"}
+${sandboxUserInput("ADVOCATE_RESPONSE", advocateResponse || "Not available")}
 
 ### Prosecutor Analysis:
-${prosecutorResponse || "Not available"}
+${sandboxUserInput("PROSECUTOR_RESPONSE", prosecutorResponse || "Not available")}
 
 ### Judge Analysis:
-${judgeResponse || "Not available"}
+${sandboxUserInput("JUDGE_RESPONSE", judgeResponse || "Not available")}
 
 ---
 
@@ -1247,13 +1265,15 @@ Please provide your professional legal analysis from your designated role perspe
         cited_ids_count: allCitedIds.length, max: MAX_CITED_IDS, role,
       }));
     } else if (allCitedIds.length > 0) {
-      // Verify against KB (knowledge_base) and Practice (legal_documents) tables
+      // Verify against KB (knowledge_base) and Practice (legal_practice_kb) tables
+      // P1 FIX: Was checking legal_documents instead of legal_practice_kb — citations
+      // come from RAG which queries legal_practice_kb, not legal_documents
       const { data: kbMatches, error: kbErr } = await supabase
         .from("knowledge_base")
         .select("id")
         .in("id", allCitedIds);
       const { data: practiceMatches, error: practiceErr } = await supabase
-        .from("legal_documents")
+        .from("legal_practice_kb")
         .select("id")
         .in("id", allCitedIds);
 
