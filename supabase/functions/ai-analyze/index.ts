@@ -43,6 +43,17 @@ function tryParseJson(text: string): unknown | null {
 
 import { handleCors } from "../_shared/edge-security.ts";
 
+/** Map case_type to allowed KB categories for RAG filtering */
+function getCategoryAllowlist(caseType: string | null): string[] {
+  if (!caseType) return []; // no filter = all categories
+  const map: Record<string, string[]> = {
+    criminal: ["criminal_code", "criminal_procedure", "constitution", "echr", "other"],
+    civil: ["civil_code", "civil_procedure", "constitution", "family_code", "other"],
+    administrative: ["administrative_code", "administrative_procedure", "constitution", "other"],
+    constitutional: ["constitution", "constitutional_law", "echr", "other"],
+  };
+  return map[caseType] || [];
+}
 
 // Legal AI System Prompts \u2014 STRICTLY for Republic of Armenia (RA) law
 // CRITICAL: No hallucinations. RAG-FIRST. KB is reference-only.
@@ -554,6 +565,15 @@ serve(async (req) => {
       const ragThreshold = anchors.length > 0 ? 0.55 : 0.65;
       console.log(`[AI_ANALYZE] RAG threshold: ${ragThreshold} (anchors: ${anchors.length})`);
 
+      // Category allowlist based on case_type
+      const { data: caseTypeData } = caseId
+        ? await supabase.from("cases").select("case_type").eq("id", caseId).maybeSingle()
+        : { data: null };
+      const categoryAllowlist = getCategoryAllowlist(caseTypeData?.case_type || null);
+      if (categoryAllowlist.length > 0) {
+        console.log(`[AI_ANALYZE] Category allowlist:`, categoryAllowlist);
+      }
+
       const rag = await dualSearch({
         supabase,
         supabaseUrl,
@@ -561,6 +581,7 @@ serve(async (req) => {
         query: searchQuery,
         referenceDate,
         threshold: ragThreshold,
+        categoryAllowlist,
         kbLimit: 8,
         practiceLimit: 5,
         kbSnippetLength: 4000,
