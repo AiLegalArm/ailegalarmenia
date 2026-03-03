@@ -8,13 +8,34 @@
  * 
  * Priority: chunk > embed > enrich.
  * Auth: x-internal-key (INTERNAL_INGEST_KEY or CRON_WORKER_KEY).
- * 
- * NOTE: Does NOT count pending jobs via PostgREST (schema cache unreliable).
- * Instead, calls workers directly — they use claim_pipeline_jobs RPC internally.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { handleCors, validateInternalRequest, buildInternalHeaders } from "../_shared/edge-security.ts";
+
+const WORKER_TIMEOUT_MS = 25_000; // 25s per worker call
+const RETRY_DELAY_MS = 3_000;     // 3s before retry
+const MAX_RETRIES = 1;
+
+interface WorkerResult {
+  data: Record<string, unknown>;
+  status: number;
+  error?: string;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isHtmlResponse(text: string): boolean {
+  return text.trimStart().startsWith("<!DOCTYPE") || text.trimStart().startsWith("<html");
+}
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -29,57 +50,101 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
-    const callWorker = async (functionName: string): Promise<{ data: Record<string, unknown>; status: number }> => {
+    const callWorker = async (functionName: string, attempt = 0): Promise<WorkerResult> => {
       const url = `${supabaseUrl}/functions/v1/${functionName}`;
       const headers = buildInternalHeaders();
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ concurrency_docs: 25 }),
-      });
-      const data = await res.json().catch(() => ({ raw_status: res.status }));
-      return { data, status: res.status };
+      try {
+        const res = await fetchWithTimeout(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ concurrency_docs: 25 }),
+        }, WORKER_TIMEOUT_MS);
+
+        const rawText = await res.text();
+        
+        // Handle HTML error pages (522, 503, etc.)
+        if (isHtmlResponse(rawText)) {
+          const errMsg = `${functionName} returned HTML (likely 522/503), status=${res.status}`;
+          console.warn(`[pipeline-orchestrator] ${errMsg}`);
+          
+          if (attempt < MAX_RETRIES) {
+            console.log(`[pipeline-orchestrator] Retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+            return callWorker(functionName, attempt + 1);
+          }
+          return { data: { picked: 0 }, status: res.status, error: errMsg };
+        }
+
+        // Parse JSON
+        try {
+          const data = JSON.parse(rawText);
+          return { data, status: res.status };
+        } catch {
+          console.warn(`[pipeline-orchestrator] ${functionName} returned non-JSON: ${rawText.slice(0, 200)}`);
+          return { data: { picked: 0 }, status: res.status, error: "non-JSON response" };
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isTimeout = msg.includes("aborted") || msg.includes("abort");
+        console.warn(`[pipeline-orchestrator] ${functionName} fetch error: ${msg}`);
+        
+        if (!isTimeout && attempt < MAX_RETRIES) {
+          console.log(`[pipeline-orchestrator] Retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          return callWorker(functionName, attempt + 1);
+        }
+        return { data: { picked: 0 }, status: 0, error: msg };
+      }
     };
 
+    const results: Record<string, WorkerResult> = {};
     let stageTriggered = "idle";
-    let workerResponse: Record<string, unknown> | null = null;
 
     // 1) Chunk
     const chunkResult = await callWorker("practice-chunk-worker");
-    if (chunkResult.status === 200 && (chunkResult.data?.picked ?? 0) > 0) {
+    results.chunk = chunkResult;
+    if (chunkResult.status === 200 && ((chunkResult.data?.picked as number) ?? 0) > 0) {
       stageTriggered = "chunk";
-      workerResponse = chunkResult.data;
     } else {
       // 2) Embed
       const embedResult = await callWorker("practice-embed-worker");
-      if (embedResult.status === 200 && (embedResult.data?.picked ?? 0) > 0) {
+      results.embed = embedResult;
+      if (embedResult.status === 200 && ((embedResult.data?.picked as number) ?? 0) > 0) {
         stageTriggered = "embed";
-        workerResponse = embedResult.data;
       } else {
         // 3) Enrich
         const enrichResult = await callWorker("practice-ai-enrich-worker");
-        if (enrichResult.status === 200 && (enrichResult.data?.picked ?? 0) > 0) {
+        results.enrich = enrichResult;
+        if (enrichResult.status === 200 && ((enrichResult.data?.picked as number) ?? 0) > 0) {
           stageTriggered = "enrich";
-          workerResponse = enrichResult.data;
         }
       }
     }
 
     const duration = Date.now() - startTime;
+    const errors = Object.entries(results)
+      .filter(([, r]) => r.error)
+      .map(([name, r]) => `${name}: ${r.error}`);
+
     console.log(
-      `[pipeline-orchestrator] stage=${stageTriggered} duration=${duration}ms result=${JSON.stringify(workerResponse ?? {}).slice(0, 200)}`,
+      `[pipeline-orchestrator] stage=${stageTriggered} duration=${duration}ms` +
+      (errors.length > 0 ? ` errors=[${errors.join("; ")}]` : "") +
+      ` results=${JSON.stringify(Object.fromEntries(Object.entries(results).map(([k, v]) => [k, { picked: v.data?.picked, status: v.status }]))).slice(0, 300)}`,
     );
 
     return new Response(JSON.stringify({
       stage_triggered: stageTriggered,
-      worker_result: workerResponse,
+      results: Object.fromEntries(
+        Object.entries(results).map(([k, v]) => [k, { picked: v.data?.picked ?? 0, status: v.status, error: v.error }])
+      ),
       duration_ms: duration,
+      errors: errors.length > 0 ? errors : undefined,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[pipeline-orchestrator] error:", msg);
+    console.error("[pipeline-orchestrator] fatal error:", msg);
     return new Response(JSON.stringify({ error: msg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -212,8 +212,17 @@ serve(async (req) => {
     });
 
     if (claimErr) {
-      console.error(`[enrich-worker] claim error: ${claimErr.message}`);
-      return new Response(JSON.stringify({ error: claimErr.message }), {
+      const rawMsg = claimErr.message || "Unknown claim error";
+      const isTransient = rawMsg.includes("Connection timed out") || rawMsg.includes("<!DOCTYPE") || rawMsg.includes("522") || rawMsg.includes("503");
+      const shortMsg = rawMsg.length > 300 ? rawMsg.substring(0, 200) + "... [truncated]" : rawMsg;
+      console.error(`[enrich-worker] claim error (transient=${isTransient}): ${shortMsg}`);
+      
+      if (isTransient) {
+        return new Response(JSON.stringify({ picked: 0, error: "transient_db_error", detail: shortMsg }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: shortMsg }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
