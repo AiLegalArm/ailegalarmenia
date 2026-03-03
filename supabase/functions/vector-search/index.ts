@@ -18,14 +18,18 @@ serve(async (req) => {
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
 
   try {
-    const { query, tables = "both", category, limit = 10, threshold: _threshold, reference_date } = await req.json();
+    const { query: rawQuery, tables = "both", category, limit = 10, threshold: _threshold, reference_date } = await req.json();
 
-    if (!query || typeof query !== "string") {
+    if (!rawQuery || typeof rawQuery !== "string") {
       return new Response(
         JSON.stringify({ error: "Query is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // P1 FIX: Cap query length to prevent expensive ILIKE/RPC operations
+    const MAX_QUERY_LENGTH = 2000;
+    const query = rawQuery.length > MAX_QUERY_LENGTH ? rawQuery.substring(0, MAX_QUERY_LENGTH) : rawQuery;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
