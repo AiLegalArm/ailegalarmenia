@@ -272,60 +272,39 @@ serve(async (req) => {
       }
     }
 
-    if (caseFacts || legalQuestion) {
-      const searchQuery = `${caseFacts || ""} ${legalQuestion || ""}`.trim();
-
-      const rag = await dualSearch({
-        supabase,
-        supabaseUrl,
-        supabaseKey: supabaseServiceKey,
-        query: searchQuery,
-        referenceDate,
-        kbLimit: 8,
-        practiceLimit: 5,
-        kbSnippetLength: 4000,
-        fullPracticeText: true,
-      });
-
-      if (rag.kbResults.length > 0) {
-        ragContext = "\n\n## Relevant Legal Sources from RA Knowledge Base:\n\n";
-        rag.kbResults.forEach((doc, index: number) => {
-          ragContext += `### ${index + 1}. ${doc.title} (${doc.category})\n`;
-          ragContext += `Source: ${doc.source_name || "RA Legal Database"}\n`;
-          ragContext += `${(doc.content_text || '').substring(0, 4000)}\n\n`;
-        });
-        sourcesUsed.push(...rag.sources.filter(s => !s.category || !['criminal','civil','administrative','echr','constitutional'].includes(s.category)));
-      } else {
-        ragContext = "\n\nNote: No specific legal sources found in knowledge base. Analysis based on general knowledge of RA legislation.\n";
-      }
-
-      if (rag.practiceResults.length > 0) {
-        ragContext += "\n\n## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n";
-        ragContext += "## \u053B\u0550\u0531\u054E\u0531\u053F\u0531\u0546 \u054A\u0550\u0531\u053F\u054f\u053B\u053F\u0531\u0545\u053B \u0540\u0535\u0546\u0531\u053F\u0531\u0545\u053B\u0546 \u0546\u0545\u0548\u0552\u053F (KB REFERENCE ONLY)\n";
-        ragContext += "## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n";
-        ragContext += formatPracticeCtx(rag.practiceResults, true);
-        ragContext += "\n\n## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n";
-        ragContext += "## KB \u0540\u0535\u0546\u0531\u053F\u0531\u0545\u053B\u0546 \u0532\u0531\u0536\u0531\u0545\u053b \u0531\u054E\u0531\u0550\u054F\n";
-        ragContext += "## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n";
-        sourcesUsed.push(...rag.sources.filter(s => s.category && ['criminal','civil','administrative','echr','constitutional'].includes(s.category)).map(s => ({
-          ...s, source_name: s.source_name || "Legal Practice KB",
-        })));
-      } else {
-        ragContext += "\n\n## \u0534\u0561\u057F\u0561\u056F\u0561\u0576 \u057A\u0580\u0561\u056F\u057F\u056B\u056F\u0561\u0575\u056B \u0570\u0561\u0574\u0561\u057A\u0561\u057F\u0561\u057D\u056D\u0561\u0576 \u0578\u0580\u0578\u0577\u0578\u0582\u0574\u0576\u0565\u0580 \u0579\u0565\u0576 \u0563\u057F\u0576\u057E\u0565\u056C\u0589\n";
-      }
-
-      console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
-    }
-
-    // Add temporal versioning disclaimer
-    if (ragContext.length > 0) {
-      ragContext += temporalDisclaimer(referenceDate, dateAssumed);
-    }
-
-    // Fetch case files content (OCR results, audio transcriptions, and raw file content) if caseId is provided
+    // ====================================================================
+    // PHASE 1: Load ALL case materials BEFORE RAG search
+    // ====================================================================
     let caseFilesContext = "";
+    let volumesText = "";
+    let audioText = "";
+    let filesText = "";
     const fileContentsForVision: Array<{ name: string; base64: string; mimeType: string }> = [];
 
+    // --- 1a. Load case_volumes OCR text ---
+    if (caseId) {
+      const { data: volumes, error: volError } = await supabase
+        .from("case_volumes")
+        .select("volume_number, title, ocr_text")
+        .eq("case_id", caseId)
+        .order("volume_number", { ascending: true });
+
+      if (!volError && volumes && volumes.length > 0) {
+        const parts: string[] = [];
+        for (const vol of volumes) {
+          if (vol.ocr_text) {
+            parts.push(`### Volume ${vol.volume_number}: ${vol.title}\n${vol.ocr_text}`);
+          }
+        }
+        if (parts.length > 0) {
+          volumesText = parts.join("\n\n");
+          caseFilesContext += "\n\n## \u054F\u0578\u0574\u0565\u0580 (Case Volumes - OCR):\n\n" + volumesText;
+        }
+        console.log(`[AI_ANALYZE] Loaded ${volumes.length} volumes, ${parts.length} with OCR text`);
+      }
+    }
+
+    // --- 1b. Load case_files (OCR, audio, direct read) ---
     // === SYNTHESIS MODE: Use pre-computed per-file analyses instead of loading files ===
     if (fileAnalyses && fileAnalyses.length > 0) {
       caseFilesContext = "\n\n## Per-File Analysis Results (Pre-computed):\n\n";
@@ -333,6 +312,7 @@ serve(async (req) => {
         caseFilesContext += `### File ${i + 1}: ${fileAnalyses[i].fileName}\n`;
         caseFilesContext += `${fileAnalyses[i].analysis}\n\n---\n\n`;
       }
+      filesText = caseFilesContext;
       console.log(`[ai-analyze] Synthesis mode: using ${fileAnalyses.length} pre-computed file analyses`);
     } else if (caseId) {
       // Get case files - either single file (fileId) or all files
@@ -374,7 +354,7 @@ serve(async (req) => {
 
         // Process OCR results
         if (!ocrError && ocrResults && ocrResults.length > 0) {
-          caseFilesContext = "\n\n## \u0533\u0578\u0580\u056E\u056B \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580 (Case Documents - OCR):\n\n";
+          caseFilesContext += "\n\n## \u0533\u0578\u0580\u056E\u056B \u0583\u0561\u057D\u057F\u0561\u0569\u0572\u0569\u0565\u0580 (Case Documents - OCR):\n\n";
           for (let index = 0; index < ocrResults.length; index++) {
             const ocr = ocrResults[index];
             const file = fileMap.get(ocr.file_id);
@@ -390,6 +370,7 @@ serve(async (req) => {
               caseFilesContext += `\u054E\u057D\u057F\u0561\u0570\u0578\u0582\u0569\u0575\u0578\u0582\u0576: ${(ocr.confidence * 100).toFixed(0)}%\n`;
             }
             caseFilesContext += `${mrResult.summary}\n\n`;
+            filesText += mrResult.summary + "\n\n";
           }
         }
 
@@ -411,6 +392,7 @@ serve(async (req) => {
               caseFilesContext += `\u054E\u057D\u057F\u0561\u0570\u0578\u0582\u0569\u0575\u0578\u0582\u0576: ${(trans.confidence * 100).toFixed(0)}%\n`;
             }
             caseFilesContext += `${mrResult.summary}\n\n`;
+            audioText += mrResult.summary + "\n\n";
           }
         }
 
@@ -476,6 +458,7 @@ serve(async (req) => {
                         console.log(`[ai-analyze] DOCX ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
                       }
                       caseFilesContext += `\n### DOCX \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${mrResult.summary}\n\n`;
+                      filesText += mrResult.summary + "\n\n";
                     }
                     if (docxResult.warnings.length > 0) {
                       console.warn(`[ai-analyze] DOCX warnings for ${fileName}:`, docxResult.warnings);
@@ -502,6 +485,7 @@ serve(async (req) => {
                     console.log(`[ai-analyze] TXT ${fileName}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
                   }
                   caseFilesContext += `\n### TXT \u0553\u0561\u057D\u057F\u0561\u0569\u0578\u0582\u0572\u0569: ${fileName}\n${mrResult.summary}\n\n`;
+                  filesText += mrResult.summary + "\n\n";
                 }
               }
             } catch (fileReadError) {
@@ -510,6 +494,70 @@ serve(async (req) => {
           }
         }
       }
+    }
+
+    // Build fullCaseText from all case materials (for future RAG enrichment)
+    const fullCaseText = [
+      caseFacts,
+      legalQuestion,
+      volumesText,
+      audioText,
+      filesText,
+    ].filter(Boolean).join("\n\n");
+
+    console.log(`[AI_ANALYZE] Loaded case materials before RAG: fullCaseText=${fullCaseText.length} chars`);
+
+    // ====================================================================
+    // PHASE 2: RAG search — now runs AFTER case materials are loaded
+    // ====================================================================
+    if (caseFacts || legalQuestion) {
+      const searchQuery = `${caseFacts || ""} ${legalQuestion || ""}`.trim();
+
+      const rag = await dualSearch({
+        supabase,
+        supabaseUrl,
+        supabaseKey: supabaseServiceKey,
+        query: searchQuery,
+        referenceDate,
+        kbLimit: 8,
+        practiceLimit: 5,
+        kbSnippetLength: 4000,
+        fullPracticeText: true,
+      });
+
+      if (rag.kbResults.length > 0) {
+        ragContext = "\n\n## Relevant Legal Sources from RA Knowledge Base:\n\n";
+        rag.kbResults.forEach((doc, index: number) => {
+          ragContext += `### ${index + 1}. ${doc.title} (${doc.category})\n`;
+          ragContext += `Source: ${doc.source_name || "RA Legal Database"}\n`;
+          ragContext += `${(doc.content_text || '').substring(0, 4000)}\n\n`;
+        });
+        sourcesUsed.push(...rag.sources.filter(s => !s.category || !['criminal','civil','administrative','echr','constitutional'].includes(s.category)));
+      } else {
+        ragContext = "\n\nNote: No specific legal sources found in knowledge base. Analysis based on general knowledge of RA legislation.\n";
+      }
+
+      if (rag.practiceResults.length > 0) {
+        ragContext += "\n\n## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n";
+        ragContext += "## \u053B\u0550\u0531\u054E\u0531\u053F\u0531\u0546 \u054A\u0550\u0531\u053F\u054F\u053B\u053F\u0531\u0545\u053B \u0540\u0535\u0546\u0531\u053F\u0531\u0545\u053B\u0546 \u0546\u0545\u0548\u0552\u053F (KB REFERENCE ONLY)\n";
+        ragContext += "## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n";
+        ragContext += formatPracticeCtx(rag.practiceResults, true);
+        ragContext += "\n\n## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n";
+        ragContext += "## KB \u0540\u0535\u0546\u0531\u053F\u0531\u0545\u053B\u0546 \u0532\u0531\u0536\u0531\u0545\u053B \u0531\u054E\u0531\u0550\u054F\n";
+        ragContext += "## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n";
+        sourcesUsed.push(...rag.sources.filter(s => s.category && ['criminal','civil','administrative','echr','constitutional'].includes(s.category)).map(s => ({
+          ...s, source_name: s.source_name || "Legal Practice KB",
+        })));
+      } else {
+        ragContext += "\n\n## \u0534\u0561\u057F\u0561\u056F\u0561\u0576 \u057A\u0580\u0561\u056F\u057F\u056B\u056F\u0561\u0575\u056B \u0570\u0561\u0574\u0561\u057A\u0561\u057F\u0561\u057D\u056D\u0561\u0576 \u0578\u0580\u0578\u0577\u0578\u0582\u0574\u0576\u0565\u0580 \u0579\u0565\u0576 \u0563\u057F\u0576\u057E\u0565\u056C\u0589\n";
+      }
+
+      console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
+    }
+
+    // Add temporal versioning disclaimer
+    if (ragContext.length > 0) {
+      ragContext += temporalDisclaimer(referenceDate, dateAssumed);
     }
 
     // unzipDocx removed — using _shared/docx-parser.ts instead
