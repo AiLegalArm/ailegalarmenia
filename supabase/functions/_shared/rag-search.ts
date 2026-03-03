@@ -36,6 +36,8 @@ export interface RAGSearchOptions {
   requestId?: string;
   /** Similarity threshold for vector search (default 0.3) */
   threshold?: number;
+  /** Restrict KB results to these categories only */
+  categoryAllowlist?: string[];
 }
 
 export interface RAGKBOptions extends RAGSearchOptions {
@@ -223,27 +225,38 @@ export async function searchKB(opts: RAGKBOptions): Promise<RAGResult<KBSearchRe
     threshold: opts.threshold,
   });
 
+  // Apply category allowlist filtering
+  if (opts.categoryAllowlist && opts.categoryAllowlist.length > 0) {
+    console.log(`[RAG] Category filter applied:`, opts.categoryAllowlist);
+  }
+
   const keywordPromise = (async (): Promise<KBSearchResult[]> => {
     if (safeKeywords.length === 0) return [];
     const orConditions = safeKeywords
       .map((k) => `title.ilike.%${k}%,content_text.ilike.%${k}%`)
       .join(",");
-    const { data, error } = await supabase
+    let q = supabase
       .from("knowledge_base")
       .select("id, title, content_text, category, source_name")
       .eq("is_active", true)
-      .or(orConditions)
-      .limit(50);
+      .or(orConditions);
+    if (opts.categoryAllowlist && opts.categoryAllowlist.length > 0) {
+      q = q.in("category", opts.categoryAllowlist);
+    }
+    const { data, error } = await q.limit(50);
     return !error && data ? data : [];
   })();
 
   const [vectorResults, keywordResults] = await Promise.all([vectorPromise, keywordPromise]);
 
-  // Vector results get semantic-based rank
-  const vectorItems = (vectorResults.kb || []).map((r: KBSearchResult) => ({
-    ...r,
-    score: (r.similarity || 0) * 10,
-  }));
+  // Vector results get semantic-based rank — post-filter by categoryAllowlist
+  const allowlist = opts.categoryAllowlist;
+  const vectorItems = (vectorResults.kb || [])
+    .filter((r: KBSearchResult) => !allowlist || allowlist.length === 0 || allowlist.includes(r.category))
+    .map((r: KBSearchResult) => ({
+      ...r,
+      score: (r.similarity || 0) * 10,
+    }));
 
   // Keyword results get keyword-relevance score
   const scoredKeyword = scoreByKeywords(keywordResults, keywords);
@@ -257,7 +270,9 @@ export async function searchKB(opts: RAGKBOptions): Promise<RAGResult<KBSearchRe
     if (referenceDate) rpcParams.reference_date = referenceDate;
     const { data, error } = await supabase.rpc("search_knowledge_base", rpcParams);
     if (!error && data) {
-      merged = (data as KBSearchResult[]).filter((r) => (r.rank ?? 0) > 0.001);
+      merged = (data as KBSearchResult[])
+        .filter((r) => (r.rank ?? 0) > 0.001)
+        .filter((r) => !allowlist || allowlist.length === 0 || allowlist.includes(r.category));
     }
   }
 
@@ -596,6 +611,7 @@ export async function dualSearch(opts: RAGSearchOptions & {
   practiceLimit?: number;
   kbSnippetLength?: number;
   fullPracticeText?: boolean;
+  categoryAllowlist?: string[];
 }): Promise<DualRAGResult> {
   const [kb, practice] = await Promise.all([
     searchKB({
