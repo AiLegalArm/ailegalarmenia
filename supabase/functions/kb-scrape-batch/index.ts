@@ -46,7 +46,6 @@ async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
   }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);

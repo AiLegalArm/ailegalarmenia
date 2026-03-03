@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -111,17 +112,24 @@ export function CaseFileUpload({ caseId }: CaseFileUploadProps) {
   });
 
   const existingOcrFileIds = new Set(ocrResults?.map(r => r.file_id) || []);
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  const ALLOWED_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png', 'audio/mpeg', 'audio/wav', 'audio/x-m4a', 'text/plain'];
+
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     for (const file of Array.from(selectedFiles)) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`${file.name}: ${t('ocr:file_too_large', 'File too large (max 50MB)')}`);
+        continue;
+      }
       await uploadFile.mutateAsync({ file, caseId });
     }
     
     // Reset input
     e.target.value = '';
-  }, [caseId, uploadFile]);
+  }, [caseId, uploadFile, t]);
 
   const handleDownload = async (storagePath: string, filename: string) => {
     try {
