@@ -217,8 +217,19 @@ serve(async (req) => {
     });
 
     if (claimErr) {
-      console.error(`[practice-chunk-worker] claim error: ${claimErr.message}`);
-      return new Response(JSON.stringify({ error: claimErr.message }), {
+      const rawMsg = claimErr.message || "Unknown claim error";
+      // 522/503 errors return HTML — truncate for logging
+      const isTransient = rawMsg.includes("Connection timed out") || rawMsg.includes("<!DOCTYPE") || rawMsg.includes("522") || rawMsg.includes("503");
+      const shortMsg = rawMsg.length > 300 ? rawMsg.substring(0, 200) + "... [truncated]" : rawMsg;
+      console.error(`[practice-chunk-worker] claim error (transient=${isTransient}): ${shortMsg}`);
+      
+      // On transient errors, return picked:0 so orchestrator continues to next stage
+      if (isTransient) {
+        return new Response(JSON.stringify({ picked: 0, error: "transient_db_error", detail: shortMsg }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: shortMsg }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
