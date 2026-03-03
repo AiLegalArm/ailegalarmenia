@@ -37,12 +37,22 @@ function formatFileSize(bytes: number): string {
 export function CaseFormFileUpload({ files, onFilesChange }: CaseFormFileUploadProps) {
   const { t } = useTranslation(['cases', 'common']);
 
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  const MAX_FILES = 20;
+
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || selectedFiles.length === 0) return;
 
-    const newFiles = Array.from(selectedFiles);
-    onFilesChange([...files, ...newFiles]);
+    const validFiles = Array.from(selectedFiles).filter(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        return false; // silently skip oversized
+      }
+      return true;
+    });
+
+    const combined = [...files, ...validFiles].slice(0, MAX_FILES);
+    onFilesChange(combined);
     
     // Reset input
     e.target.value = '';

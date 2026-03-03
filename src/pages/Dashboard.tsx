@@ -91,8 +91,15 @@ const Dashboard = () => {
   const { documents: kbDocuments, isLoading: kbLoading } = useKnowledgeBase(kbFilters);
 
   // Helper function to upload files after case creation
+  const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB
+
   const uploadFilesToCase = async (caseId: string, files: File[]) => {
     for (const file of files) {
+      if (file.size > MAX_UPLOAD_SIZE) {
+        console.warn(`Skipping oversized file: ${file.name} (${file.size} bytes)`);
+        continue;
+      }
+
       const fileId = crypto.randomUUID();
       const fileExt = file.name.split('.').pop();
       const storagePath = `${caseId}/${fileId}.${fileExt}`;
