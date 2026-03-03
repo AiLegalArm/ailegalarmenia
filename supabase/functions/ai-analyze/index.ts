@@ -556,7 +556,7 @@ serve(async (req) => {
     const { extractNormRefs } = await import("../_shared/norm-ref-extractor.ts");
     const { lookupByAnchors } = await import("../_shared/rag-search.ts");
     const anchors = extractNormRefs(fullCaseText);
-    console.log(`[AI_ANALYZE] Extracted ${anchors.length} norm anchors from case materials`);
+    console.log("[AI_ANALYZE] Anchors found:", anchors.length);
 
     let preciseSources: Array<{ id: string; title: string; category: string; source_name: string; content_text: string; article_number: string | null; anchor_raw: string }> = [];
     if (anchors.length > 0) {
@@ -573,7 +573,7 @@ serve(async (req) => {
         referenceDate,
         supabase,
       });
-      console.log(`[AI_ANALYZE] Anchor-based sources: ${preciseSources.length}`);
+      console.log("[AI_ANALYZE] Precise sources:", preciseSources.length);
 
       // Add precise sources to ragContext and sourcesUsed
       if (preciseSources.length > 0) {
@@ -647,6 +647,7 @@ serve(async (req) => {
         ragContext += "\n\n## \u0534\u0561\u057F\u0561\u056F\u0561\u0576 \u057A\u0580\u0561\u056F\u057F\u056B\u056F\u0561\u0575\u056B \u0570\u0561\u0574\u0561\u057A\u0561\u057F\u0561\u057D\u056D\u0561\u0576 \u0578\u0580\u0578\u0577\u0578\u0582\u0574\u0576\u0565\u0580 \u0579\u0565\u0576 \u0563\u057F\u0576\u057E\u0565\u056C\u0589\n";
       }
 
+      console.log("[AI_ANALYZE] Semantic sources:", rag.sources.length);
       console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
 
       // Merge anchor-based + semantic sources, dedup, cap at 50
@@ -654,7 +655,7 @@ serve(async (req) => {
       // Replace sourcesUsed with merged result
       sourcesUsed.length = 0;
       sourcesUsed.push(...mergedSources);
-      console.log(`[AI_ANALYZE] Final sources: ${sourcesUsed.length}`);
+      console.log("[AI_ANALYZE] Final sources:", sourcesUsed.length);
     }
     // Add temporal versioning disclaimer
     if (ragContext.length > 0) {

@@ -613,6 +613,8 @@ export async function dualSearch(opts: RAGSearchOptions & {
   fullPracticeText?: boolean;
   categoryAllowlist?: string[];
 }): Promise<DualRAGResult> {
+  console.log("[RAG] Query length:", opts.query.length);
+
   const [kb, practice] = await Promise.all([
     searchKB({
       ...opts,
@@ -624,6 +626,9 @@ export async function dualSearch(opts: RAGSearchOptions & {
       limit: opts.practiceLimit ?? 5,
     }),
   ]);
+
+  const totalResults = kb.results.length + practice.results.length;
+  console.log("[RAG] Results after threshold:", totalResults);
 
   // Aggregate telemetry
   const rerankOk = (kb.rerank_ok !== false) && (practice.rerank_ok !== false);
