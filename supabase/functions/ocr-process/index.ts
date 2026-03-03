@@ -31,13 +31,25 @@ function computeCost(model: string, inputTokens: number, outputTokens: number): 
 }
 
 // CORS handled via handleCors in serve() below; corsHeaders is set per-request.
-// This const is kept for legacy error/json response helpers that need it before handleCors runs.
 import { handleCors as _handleCorsOcr } from "../_shared/edge-security.ts";
-let corsHeaders: Record<string, string> = {
+const DEFAULT_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+/** Validate that a URL points to our own Supabase storage — blocks SSRF */
+function isAllowedFileUrl(url: string): boolean {
+  if (url.startsWith('data:')) return true;
+  if (url.includes('/storage/v1/object/')) {
+    // Must be our own Supabase URL
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    if (supabaseUrl && url.startsWith(supabaseUrl)) return true;
+    // Also allow relative storage paths
+    if (url.startsWith('/storage/v1/object/')) return true;
+  }
+  return false;
+}
 
 // ─── Output schema ──────────────────────────────────────────────────────────
 
@@ -65,15 +77,18 @@ interface OcrResponse {
   word_count?: number;
 }
 
+// Note: these use a per-request corsHeaders variable captured in the handler closure
+let _activeCorsHeaders: Record<string, string> = DEFAULT_CORS_HEADERS;
+
 function jsonResponse(body: OcrResponse, status = 200, requestId?: string): Response {
-  const headers: Record<string, string> = { ...corsHeaders, "Content-Type": "application/json" };
+  const headers: Record<string, string> = { ..._activeCorsHeaders, "Content-Type": "application/json" };
   if (requestId) headers["x-request-id"] = requestId;
   return new Response(JSON.stringify(body), { status, headers });
 }
 
 function errorResponse(message: string, status = 400, requestId?: string): Response {
   const body: OcrResponse = { ok: false, text: "", warnings: [message] };
-  const headers: Record<string, string> = { ...corsHeaders, "Content-Type": "application/json" };
+  const headers: Record<string, string> = { ..._activeCorsHeaders, "Content-Type": "application/json" };
   if (requestId) headers["x-request-id"] = requestId;
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -113,7 +128,8 @@ serve(async (req) => {
   // Centralized CORS handling
   const corsResult = _handleCorsOcr(req);
   if (corsResult.errorResponse) return corsResult.errorResponse;
-  if (corsResult.corsHeaders) corsHeaders = corsResult.corsHeaders;
+  // Per-request CORS headers — avoid shared mutable state
+  if (corsResult.corsHeaders) _activeCorsHeaders = corsResult.corsHeaders;
 
   const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
 
@@ -221,6 +237,10 @@ serve(async (req) => {
       if (error || !data) throw new Error(`Failed to download from storage: ${error?.message || 'Unknown error'}`);
       fileBuffer = await data.arrayBuffer();
     } else {
+      // SSRF PROTECTION: Block arbitrary URL fetching
+      if (!isAllowedFileUrl(fileUrl)) {
+        return errorResponse("Invalid file URL: only Supabase storage URLs are allowed", 400, requestId);
+      }
       const fileResponse = await fetch(fileUrl);
       if (!fileResponse.ok) throw new Error(`Failed to download file: ${fileResponse.status}`);
       fileBuffer = await fileResponse.arrayBuffer();

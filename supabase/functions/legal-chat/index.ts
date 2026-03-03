@@ -392,6 +392,7 @@ serve(async (req) => {
     ];
 
     // FIX B: Add conversation history with caps to prevent token abuse
+    // FIX D: Sanitize history messages through prompt-armor to prevent injection via earlier turns
     const MAX_HISTORY_MESSAGES = 30;
     const MAX_CONTENT_LENGTH = 5000;
     if (conversationHistory && Array.isArray(conversationHistory)) {
@@ -401,7 +402,16 @@ serve(async (req) => {
           (msg.role === "user" || msg.role === "assistant") &&
           typeof msg.content === "string"
         ) {
-          messages.push({ role: msg.role, content: msg.content.substring(0, MAX_CONTENT_LENGTH) });
+          let safeContent = msg.content.substring(0, MAX_CONTENT_LENGTH);
+          // Sanitize user messages in history (assistant messages are trusted)
+          if (msg.role === "user") {
+            const historyScan = sanitizeUserInput(safeContent);
+            if (historyScan.injectionDetected) {
+              logInjectionAttempt("legal-chat", "HISTORY_MESSAGE", historyScan);
+              safeContent = historyScan.sanitizedText;
+            }
+          }
+          messages.push({ role: msg.role, content: safeContent });
         }
       }
     }
