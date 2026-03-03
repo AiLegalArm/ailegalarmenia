@@ -28,6 +28,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PdfExportButton } from '@/components/PdfExportButton';
 import { exportCaseDetailToPDF } from '@/lib/pdfExport';
+import { exportFullCaseReportToPDF } from '@/lib/pdfExportFullReport';
+import type { FullCaseReportData } from '@/lib/pdfExportFullReport';
 import { format } from 'date-fns';
 import { 
   Edit, 
@@ -38,6 +40,7 @@ import {
   Music,
   Bell,
   Bot,
+  Download,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -176,6 +179,74 @@ const CaseDetail = () => {
     });
   };
 
+  const handleExportFullReport = async () => {
+    if (!caseData) return;
+    
+    try {
+      toast({ title: t('common:loading', 'Loading...'), description: t('cases:generating_report', 'Generating full report...') });
+      
+      // Fetch all data in parallel
+      const [filesRes, analysesRes, agentRunsRes, findingsRes, evidenceRes, reportRes] = await Promise.all([
+        supabase.from('case_files').select('original_filename, file_size, created_at').eq('case_id', caseData.id).is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('ai_analysis').select('role, response_text, created_at, sources_used').eq('case_id', caseData.id).order('created_at', { ascending: false }),
+        supabase.from('agent_analysis_runs').select('agent_type, status, summary, analysis_result, completed_at, tokens_used').eq('case_id', caseData.id).order('created_at', { ascending: false }),
+        supabase.from('agent_findings').select('title, description, severity, finding_type, legal_basis, recommendation').eq('case_id', caseData.id),
+        supabase.from('evidence_registry').select('evidence_number, title, evidence_type, admissibility_status, description, ai_analysis, admissibility_notes').eq('case_id', caseData.id).order('evidence_number'),
+        supabase.from('aggregated_reports').select('*').eq('case_id', caseData.id).order('generated_at', { ascending: false }).limit(1),
+      ]);
+
+      // Build timeline
+      const timeline: Array<{ type: string; title: string; description?: string; timestamp: string }> = [];
+      timeline.push({ type: 'created', title: t('cases:case_created', 'Case created'), timestamp: caseData.created_at });
+      filesRes.data?.forEach(f => timeline.push({ type: 'file', title: t('cases:file_upload', 'File upload'), description: f.original_filename, timestamp: f.created_at }));
+      analysesRes.data?.forEach(a => timeline.push({ type: 'analysis', title: 'AI Analysis', description: a.role, timestamp: a.created_at }));
+      agentRunsRes.data?.filter(r => r.completed_at).forEach(r => timeline.push({ type: 'agent', title: 'Agent: ' + r.agent_type, timestamp: r.completed_at! }));
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      const aggReport = reportRes.data?.[0];
+
+      await exportFullCaseReportToPDF({
+        caseNumber: caseData.case_number,
+        caseTitle: caseData.title,
+        description: caseData.description || undefined,
+        facts: caseData.facts || undefined,
+        legalQuestion: caseData.legal_question || undefined,
+        status: caseData.status,
+        priority: caseData.priority,
+        caseType: caseData.case_type || undefined,
+        courtName: caseData.court_name || undefined,
+        courtDate: caseData.court_date ? format(new Date(caseData.court_date), 'dd.MM.yyyy') : undefined,
+        notes: caseData.notes || undefined,
+        createdAt: new Date(caseData.created_at),
+        updatedAt: new Date(caseData.updated_at),
+        userName: user?.email,
+        language: 'hy',
+        files: filesRes.data?.map(f => ({ original_filename: f.original_filename, file_size: f.file_size, created_at: f.created_at })),
+        timeline,
+        aiAnalyses: analysesRes.data?.map(a => ({ role: a.role, response_text: a.response_text, created_at: a.created_at, sources_used: a.sources_used })),
+        agentRuns: agentRunsRes.data?.map(r => ({ agent_type: r.agent_type, status: r.status, summary: r.summary || undefined, analysis_result: r.analysis_result || undefined, completed_at: r.completed_at || undefined, tokens_used: r.tokens_used || undefined })),
+        findings: findingsRes.data?.map(f => ({ title: f.title, description: f.description, severity: f.severity || undefined, finding_type: f.finding_type, legal_basis: f.legal_basis || undefined, recommendation: f.recommendation || undefined })),
+        evidence: evidenceRes.data?.map(e => ({ evidence_number: e.evidence_number, title: e.title, evidence_type: e.evidence_type, admissibility_status: e.admissibility_status || undefined, description: e.description || undefined, ai_analysis: e.ai_analysis || undefined, admissibility_notes: e.admissibility_notes || undefined })),
+        aggregatedReport: aggReport ? {
+          title: aggReport.title,
+          executive_summary: aggReport.executive_summary || undefined,
+          evidence_summary: aggReport.evidence_summary || undefined,
+          violations_summary: aggReport.violations_summary || undefined,
+          defense_strategy: aggReport.defense_strategy || undefined,
+          prosecution_weaknesses: aggReport.prosecution_weaknesses || undefined,
+          recommendations: aggReport.recommendations || undefined,
+          full_report: aggReport.full_report || undefined,
+          generated_at: aggReport.generated_at,
+        } : undefined,
+      });
+      
+      toast({ title: t('common:success', 'Success'), description: t('common:pdf_exported', 'PDF exported') });
+    } catch (error) {
+      console.error('Full report export error:', error);
+      toast({ title: t('common:error', 'Error'), variant: 'destructive' });
+    }
+  };
+
   const canEdit = isClient || isAdmin || isLawyer;
 
   if (isLoading) {
@@ -251,6 +322,21 @@ const CaseDetail = () => {
                 </Button>
               </div>
             )}
+            
+            {/* Full Report Export Button */}
+            <div className="pt-2">
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={handleExportFullReport}
+                className="w-full h-12 sm:h-11 rounded-xl text-mobile-sm sm:text-sm font-medium shadow-soft active:scale-[0.98] transition-transform"
+              >
+                <Download className="h-4 w-4 sm:h-5 sm:w-5 mr-2 shrink-0" />
+                <span className="truncate">
+                  {i18n.language === 'hy' ? '\u053C\u056B\u0561\u056F\u0561\u057F\u0561\u0580 \u0566\u0565\u056F\u0578\u0582\u0575\u0581 (PDF)' : i18n.language === 'ru' ? '\u041F\u043E\u043B\u043D\u044B\u0439 \u043E\u0442\u0447\u0451\u0442 (PDF)' : 'Full Report (PDF)'}
+                </span>
+              </Button>
+            </div>
           </div>
         </div>
 
