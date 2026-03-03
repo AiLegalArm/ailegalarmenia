@@ -548,8 +548,14 @@ export async function lookupByAnchors(params: LookupByAnchorsParams): Promise<An
     }
 
     // Search by article_number OR act_name in title
+    // P1 FIX: sanitize act_name before ILIKE to prevent PostgREST injection
     if (anchor.act_name) {
-      q = q.or(`article_number.eq.${anchor.article},title.ilike.%${anchor.act_name}%`);
+      const safeActName = sanitizeForPostgrest(anchor.act_name);
+      if (safeActName.length > 0) {
+        q = q.or(`article_number.eq.${anchor.article},title.ilike.%${safeActName}%`);
+      } else {
+        q = q.eq("article_number", anchor.article);
+      }
     } else {
       q = q.eq("article_number", anchor.article);
     }
