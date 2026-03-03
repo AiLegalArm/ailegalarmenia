@@ -173,7 +173,7 @@ export function useKnowledgeBase(filters: KBFilters = {}) {
     queryFn: async () => {
       let query = supabase
         .from('knowledge_base')
-        .select('*', { count: 'exact' })
+        .select('id, title, content_text, category, source_url, source_name, version_date, article_number, uploaded_by, is_active, created_at, updated_at, current_version, embedding_status, content_hash', { count: 'exact' })
         .eq('is_active', true)
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1);
