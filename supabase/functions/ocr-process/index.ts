@@ -41,13 +41,22 @@ const DEFAULT_CORS_HEADERS: Record<string, string> = {
 /** Validate that a URL points to our own Supabase storage — blocks SSRF */
 function isAllowedFileUrl(url: string): boolean {
   if (url.startsWith('data:')) return true;
-  if (url.includes('/storage/v1/object/')) {
-    // Must be our own Supabase URL
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    if (supabaseUrl && url.startsWith(supabaseUrl)) return true;
-    // Also allow relative storage paths
-    if (url.startsWith('/storage/v1/object/')) return true;
+  
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  if (!supabaseUrl) return false;
+
+  // Strict check: Must start with Supabase URL + /storage/v1/object/
+  // This prevents hitting other endpoints or external domains
+  if (url.startsWith(supabaseUrl + '/storage/v1/object/')) {
+    return true;
   }
+  
+  // Also allow relative paths if they are strictly /storage/v1/object/
+  // (though fetch() usually requires absolute, some clients might send relative)
+  if (url.startsWith('/storage/v1/object/')) {
+    return true;
+  }
+
   return false;
 }
 
