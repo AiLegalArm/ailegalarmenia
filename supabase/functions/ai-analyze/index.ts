@@ -55,6 +55,38 @@ function getCategoryAllowlist(caseType: string | null): string[] {
   return map[caseType] || [];
 }
 
+/** Citation Guard limit */
+const MAX_CITED_IDS = 50;
+
+/** Merge anchor-based precise sources with semantic RAG sources.
+ *  Precise first, semantic after, deduplicated by id, capped at MAX_CITED_IDS. */
+function mergeAndDeduplicate(
+  precise: Array<{ id: string; title: string; category: string; source_name: string }>,
+  semantic: Array<{ title: string; category?: string; source_name?: string; id?: string }>,
+): Array<{ title: string; category: string; source_name: string; id?: string }> {
+  const seen = new Set<string>();
+  const merged: Array<{ title: string; category: string; source_name: string; id?: string }> = [];
+
+  // Phase 1: precise sources (anchors) — always first
+  for (const src of precise) {
+    if (merged.length >= MAX_CITED_IDS) break;
+    if (src.id && seen.has(src.id)) continue;
+    if (src.id) seen.add(src.id);
+    merged.push({ title: src.title, category: src.category, source_name: src.source_name, id: src.id });
+  }
+
+  // Phase 2: semantic sources — fill remaining slots
+  for (const src of semantic) {
+    if (merged.length >= MAX_CITED_IDS) break;
+    const key = src.id || src.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ title: src.title, category: src.category || "", source_name: src.source_name || "", id: src.id });
+  }
+
+  return merged;
+}
+
 // Legal AI System Prompts \u2014 STRICTLY for Republic of Armenia (RA) law
 // CRITICAL: No hallucinations. RAG-FIRST. KB is reference-only.
 // NOTE: If external sources (HUDOC/Datalex/ARLIS/EAEU) are NOT connected via KB/RAG,
@@ -616,8 +648,14 @@ serve(async (req) => {
       }
 
       console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
-    }
 
+      // Merge anchor-based + semantic sources, dedup, cap at 50
+      const mergedSources = mergeAndDeduplicate(preciseSources, sourcesUsed);
+      // Replace sourcesUsed with merged result
+      sourcesUsed.length = 0;
+      sourcesUsed.push(...mergedSources);
+      console.log(`[AI_ANALYZE] Final sources: ${sourcesUsed.length}`);
+    }
     // Add temporal versioning disclaimer
     if (ragContext.length > 0) {
       ragContext += temporalDisclaimer(referenceDate, dateAssumed);
