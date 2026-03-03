@@ -58,33 +58,94 @@ function getCategoryAllowlist(caseType: string | null): string[] {
 /** Citation Guard limit */
 const MAX_CITED_IDS = 50;
 
+/** Armenian legal hierarchy ranking by category/source_name */
+function authorityRank(src: { category?: string; source_name?: string; title?: string }): number {
+  const cat = (src.category || "").toLowerCase();
+  const name = (src.source_name || "").toLowerCase();
+  const title = (src.title || "").toLowerCase();
+
+  // Constitution
+  if (cat.includes("constitution") || cat === "constitutional_law") return 100;
+  // ECHR / international treaties
+  if (cat === "echr" || cat.includes("treaty") || name.includes("echr") || name.includes("\u0565\u056f\u0574\u056b")) return 95;
+  // Codes (criminal, civil, administrative, procedure)
+  if (cat.includes("_code") || cat.includes("_procedure")) return 85;
+  // Laws (\u0555\u0580\u0565\u0576\u0584 / \u0540\u0555)
+  if (cat === "law" || cat === "laws" || name.includes("\u0585\u0580\u0565\u0576\u0584") || title.includes("\u0585\u0580\u0565\u0576\u0584")) return 75;
+  // Cassation / Supreme Court practice (BINDING)
+  if (name.includes("cassation") || name.includes("\u057e\u0573\u056b\u057c") || cat.includes("cassation")) return 70;
+  // Court practice (general)
+  if (cat.includes("practice") || cat.includes("court")) return 65;
+  // Government decisions / ministerial orders
+  if (cat.includes("government") || cat.includes("ministerial") || cat.includes("municipal")
+      || name.includes("\u056f\u0561\u057c\u0561\u057e\u0561\u0580\u0578\u0582\u0569") || name.includes("\u0576\u0561\u056d\u0561\u0580\u0561\u0580")) return 55;
+  // Bylaws / regulations
+  if (cat.includes("bylaw") || cat.includes("regulation")) return 45;
+  // Other
+  return 10;
+}
+
+interface MergedSource {
+  title: string;
+  category: string;
+  source_name: string;
+  id?: string;
+  anchorMatch: boolean;
+  semanticScore: number;
+}
+
 /** Merge anchor-based precise sources with semantic RAG sources.
- *  Precise first, semantic after, deduplicated by id, capped at MAX_CITED_IDS. */
+ *  Dedup by id, sort by: anchorMatch DESC → authorityRank DESC → semanticScore DESC,
+ *  cap at MAX_CITED_IDS. */
 function mergeAndDeduplicate(
   precise: Array<{ id: string; title: string; category: string; source_name: string }>,
-  semantic: Array<{ title: string; category?: string; source_name?: string; id?: string }>,
-): Array<{ title: string; category: string; source_name: string; id?: string }> {
+  semantic: Array<{ title: string; category?: string; source_name?: string; id?: string; similarity?: number; score?: number }>,
+): MergedSource[] {
   const seen = new Set<string>();
-  const merged: Array<{ title: string; category: string; source_name: string; id?: string }> = [];
+  const all: MergedSource[] = [];
 
-  // Phase 1: precise sources (anchors) — always first
+  // Collect precise sources (anchor-matched)
   for (const src of precise) {
-    if (merged.length >= MAX_CITED_IDS) break;
-    if (src.id && seen.has(src.id)) continue;
-    if (src.id) seen.add(src.id);
-    merged.push({ title: src.title, category: src.category, source_name: src.source_name, id: src.id });
+    const key = src.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    all.push({
+      title: src.title,
+      category: src.category,
+      source_name: src.source_name,
+      id: src.id,
+      anchorMatch: true,
+      semanticScore: 0,
+    });
   }
 
-  // Phase 2: semantic sources — fill remaining slots
+  // Collect semantic sources
   for (const src of semantic) {
-    if (merged.length >= MAX_CITED_IDS) break;
     const key = src.id || src.title;
     if (seen.has(key)) continue;
     seen.add(key);
-    merged.push({ title: src.title, category: src.category || "", source_name: src.source_name || "", id: src.id });
+    all.push({
+      title: src.title,
+      category: src.category || "",
+      source_name: src.source_name || "",
+      id: src.id,
+      anchorMatch: false,
+      semanticScore: (src as Record<string, unknown>).similarity as number || (src as Record<string, unknown>).score as number || 0,
+    });
   }
 
-  return merged;
+  // Sort: anchorMatch DESC, authorityRank DESC, semanticScore DESC
+  all.sort((a, b) => {
+    // Anchor-matched always first
+    if (a.anchorMatch !== b.anchorMatch) return a.anchorMatch ? -1 : 1;
+    // Then by legal hierarchy
+    const rankDiff = authorityRank(b) - authorityRank(a);
+    if (rankDiff !== 0) return rankDiff;
+    // Then by semantic score
+    return b.semanticScore - a.semanticScore;
+  });
+
+  return all.slice(0, MAX_CITED_IDS);
 }
 
 // Legal AI System Prompts \u2014 STRICTLY for Republic of Armenia (RA) law
@@ -650,12 +711,15 @@ serve(async (req) => {
       console.log("[AI_ANALYZE] Semantic sources:", rag.sources.length);
       console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
 
-      // Merge anchor-based + semantic sources, dedup, cap at 50
+      // Merge anchor-based + semantic sources, dedup, sort by hierarchy, cap at 50
       const mergedSources = mergeAndDeduplicate(preciseSources, sourcesUsed);
       // Replace sourcesUsed with merged result
       sourcesUsed.length = 0;
       sourcesUsed.push(...mergedSources);
       console.log("[AI_ANALYZE] Final sources:", sourcesUsed.length);
+      console.log("[AI_ANALYZE] Top sources ranks:", mergedSources.slice(0, 5).map(s => ({
+        id: s.id, rank: authorityRank(s), anchor: s.anchorMatch,
+      })));
     }
     // Add temporal versioning disclaimer
     if (ragContext.length > 0) {
