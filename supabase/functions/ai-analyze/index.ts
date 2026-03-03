@@ -550,12 +550,17 @@ serve(async (req) => {
     if (caseFacts || legalQuestion) {
       const searchQuery = `${caseFacts || ""} ${legalQuestion || ""}`.trim();
 
+      // Dynamic threshold: stricter when anchors already provided precise sources
+      const ragThreshold = anchors.length > 0 ? 0.55 : 0.65;
+      console.log(`[AI_ANALYZE] RAG threshold: ${ragThreshold} (anchors: ${anchors.length})`);
+
       const rag = await dualSearch({
         supabase,
         supabaseUrl,
         supabaseKey: supabaseServiceKey,
         query: searchQuery,
         referenceDate,
+        threshold: ragThreshold,
         kbLimit: 8,
         practiceLimit: 5,
         kbSnippetLength: 4000,
