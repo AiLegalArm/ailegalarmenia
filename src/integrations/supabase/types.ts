@@ -2414,10 +2414,6 @@ export type Database = {
         Args: { _field_name: string; _user_id: string }
         Returns: string
       }
-      decrypt_sensitive_data: {
-        Args: { p_encrypted_data: string; p_key?: string }
-        Returns: string
-      }
       dictionary_search: {
         Args: { q_norm: string; search_limit?: number; search_offset?: number }
         Returns: {
@@ -2434,10 +2430,6 @@ export type Database = {
       encrypt_pii: {
         Args: { _field_name: string; _user_id: string; _value: string }
         Returns: boolean
-      }
-      encrypt_sensitive_data: {
-        Args: { p_data: string; p_key?: string }
-        Returns: string
       }
       get_kb_chunk: {
         Args: { chunk_idx: number; doc_id: string }
