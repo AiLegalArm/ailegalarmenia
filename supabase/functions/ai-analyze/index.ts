@@ -508,6 +508,43 @@ serve(async (req) => {
     console.log(`[AI_ANALYZE] Loaded case materials before RAG: fullCaseText=${fullCaseText.length} chars`);
 
     // ====================================================================
+    // PHASE 1.5: Extract norm anchors from case materials for precise lookup
+    // ====================================================================
+    const { extractNormRefs } = await import("../_shared/norm-ref-extractor.ts");
+    const { lookupByAnchors } = await import("../_shared/rag-search.ts");
+    const anchors = extractNormRefs(fullCaseText);
+    console.log(`[AI_ANALYZE] Extracted ${anchors.length} norm anchors from case materials`);
+
+    let preciseSources: Array<{ id: string; title: string; category: string; source_name: string; content_text: string; article_number: string | null; anchor_raw: string }> = [];
+    if (anchors.length > 0) {
+      // Load case for case_type
+      const { data: caseData } = await supabase
+        .from("cases")
+        .select("case_type")
+        .eq("id", caseId || "")
+        .maybeSingle();
+
+      preciseSources = await lookupByAnchors({
+        anchors,
+        caseType: caseData?.case_type || null,
+        referenceDate,
+        supabase,
+      });
+      console.log(`[AI_ANALYZE] Anchor-based sources: ${preciseSources.length}`);
+
+      // Add precise sources to ragContext and sourcesUsed
+      if (preciseSources.length > 0) {
+        ragContext += "\n\n## \u0546\u0578\u0580\u0574\u0561\u057f\u056b\u057e \u0570\u0565\u0576\u0561\u056f\u0561\u0575\u056b\u0576 \u0561\u0572\u0562\u0575\u0578\u0582\u0580\u0576\u0565\u0580 (Anchor-Based Precise Sources):\n\n";
+        for (const src of preciseSources) {
+          ragContext += `### ${src.title} (\u0570\u0578\u0564\u057e\u0561\u056e ${src.article_number || "N/A"}, ${src.category})\n`;
+          ragContext += `Source: ${src.source_name}\nID: ${src.id}\n`;
+          ragContext += `${src.content_text}\n\n---\n\n`;
+          sourcesUsed.push({ title: src.title, category: src.category, source_name: src.source_name });
+        }
+      }
+    }
+
+    // ====================================================================
     // PHASE 2: RAG search — now runs AFTER case materials are loaded
     // ====================================================================
     if (caseFacts || legalQuestion) {
