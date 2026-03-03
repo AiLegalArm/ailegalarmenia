@@ -21,7 +21,6 @@
  *   ALLOW_WILDCARD_CORS      – "true" enables "*" ONLY when ENV != "production"
  *   ENV                      – environment identifier ("production", "preview", "dev")
  *   INTERNAL_INGEST_KEY      – shared secret for x-internal-key header (REQUIRED in prod)
- *   ALLOW_UNAUTH_INGEST      – set to "true" to bypass auth when key is missing
  *   MAX_INPUT_CHARS           – max text length (default 2 000 000)
  */
 
@@ -223,7 +222,7 @@ export function handleCors(req: Request): RequestValidation | { corsHeaders?: un
     const fallback = { "Content-Type": "application/json" };
     return {
       errorResponse: new Response(
-        JSON.stringify({ error: "cors_not_allowed", origin: origin }),
+        JSON.stringify({ error: "cors_not_allowed" }),
         { status: 403, headers: fallback },
       ),
     };
@@ -274,11 +273,6 @@ export function validateInternalRequest(
   corsHeaders: Record<string, string>,
 ): Response | null {
   if (isValidInternalCall(req)) return null;
-
-  // Legacy dev bypass
-  if (Deno.env.get("ALLOW_UNAUTH_INGEST") === "true") {
-    return null;
-  }
 
   const secret = Deno.env.get("INTERNAL_INGEST_KEY");
   if (!secret) {
