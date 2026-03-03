@@ -35,6 +35,17 @@ function isPdfUrl(url: string): boolean {
 }
 
 async function fetchWithRetry(url: string, maxRetries = 3): Promise<Response> {
+  // SSRF Protection: Block metadata/private IPs
+  try {
+    const u = new URL(url);
+    if (u.hostname === '169.254.169.254' || u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      throw new Error("Blocked restricted IP");
+    }
+  } catch (e) {
+    throw new Error(`Invalid URL: ${e}`);
+  }
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();

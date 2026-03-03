@@ -143,7 +143,7 @@ serve(async (req) => {
         // Use Map-Reduce for large OCR texts instead of hard truncation
         const mrResult = await mapReduceSummarize(text);
         if (mrResult.wasReduced) {
-          console.log(`[extract-case-fields] OCR doc ${idx + 1}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars (${mrResult.chunksProcessed} chunks, ${mrResult.latencyMs}ms)`);
+          console.log(`[extract-case-fields] OCR doc ${idx + 1}: Map-Reduce ${mrResult.originalLength} -> ${mrResult.summary.length} chars`);
         }
         context += `\n\n[Document ${idx + 1}]:\n${mrResult.summary}`;
       }

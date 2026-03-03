@@ -1,3 +1,5 @@
+// ============= Full file contents =============
+
 /**
  * translate-to-armenian
  * Translates a text chunk to Armenian using the centralized AI router.
@@ -8,6 +10,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { handleCors } from "../_shared/edge-security.ts";
 import { callText } from "../_shared/openai-router.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 
 const FUNCTION_NAME = "translate-to-armenian";
 
@@ -29,6 +32,22 @@ serve(async (req) => {
     });
 
   try {
+    // === AUTH GUARD ===
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const sb = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await sb.auth.getUser();
+    if (authError || !user) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    // === END AUTH GUARD ===
+
     const { text } = await req.json();
     if (!text || typeof text !== "string") {
       return json({ error: "text is required" }, 400);
