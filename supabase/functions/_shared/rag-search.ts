@@ -465,6 +465,102 @@ export function temporalDisclaimer(referenceDate: string | null | undefined, dat
   return "";
 }
 
+// ─── Anchor-Based Precise Lookup ────────────────────────────────────────────
+
+import type { NormAnchor } from "./norm-ref-extractor.ts";
+
+/** Category mapping per case_type for anchor lookups */
+const CATEGORY_MAP: Record<string, string[]> = {
+  criminal: ["criminal_code", "criminal_procedure", "constitution", "echr"],
+  civil: ["civil_code", "civil_procedure", "constitution"],
+  administrative: ["administrative_code", "constitution"],
+};
+
+export interface LookupByAnchorsParams {
+  anchors: NormAnchor[];
+  caseType?: string | null;
+  referenceDate?: string | null;
+  supabase: SupabaseClient;
+}
+
+export interface AnchorSource {
+  id: string;
+  title: string;
+  category: string;
+  source_name: string;
+  content_text: string;
+  article_number: string | null;
+  anchor_raw: string;
+}
+
+/**
+ * Precise KB lookup by extracted norm anchors (article numbers / act names).
+ * No semantic search — direct DB queries only.
+ * Returns sources compatible with Citation Guard format.
+ */
+export async function lookupByAnchors(params: LookupByAnchorsParams): Promise<AnchorSource[]> {
+  const { anchors, caseType, referenceDate, supabase } = params;
+  if (!anchors || anchors.length === 0) return [];
+
+  const allowedCategories = caseType ? CATEGORY_MAP[caseType] || [] : [];
+  const seen = new Set<string>();
+  const results: AnchorSource[] = [];
+
+  for (const anchor of anchors) {
+    if (!anchor.article) continue;
+
+    // Build query: article_number match OR title ILIKE act_name
+    let q = supabase
+      .from("knowledge_base")
+      .select("id, title, content_text, category, source_name, article_number")
+      .eq("is_active", true);
+
+    // Filter by category if case_type is known
+    if (allowedCategories.length > 0) {
+      q = q.in("category", allowedCategories);
+    }
+
+    // Temporal filtering
+    if (referenceDate) {
+      q = q.or(`effective_from.is.null,effective_from.lte.${referenceDate}`)
+           .or(`effective_to.is.null,effective_to.gte.${referenceDate}`);
+    }
+
+    // Search by article_number OR act_name in title
+    if (anchor.act_name) {
+      q = q.or(`article_number.eq.${anchor.article},title.ilike.%${anchor.act_name}%`);
+    } else {
+      q = q.eq("article_number", anchor.article);
+    }
+
+    q = q.limit(10);
+
+    const { data, error } = await q;
+    if (error) {
+      console.warn(`[lookupByAnchors] Query error for article=${anchor.article}:`, error.message);
+      continue;
+    }
+
+    if (data) {
+      for (const row of data) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        results.push({
+          id: row.id,
+          title: row.title,
+          category: row.category,
+          source_name: row.source_name || "RA Legal Database",
+          content_text: (row.content_text || "").substring(0, 4000),
+          article_number: row.article_number,
+          anchor_raw: anchor.raw,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
 // ─── Convenience: Full dual-bucket search ───────────────────────────────────
 
 export interface DualRAGResult {
