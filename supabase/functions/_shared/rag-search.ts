@@ -34,6 +34,8 @@ export interface RAGSearchOptions {
   category?: string | null;
   /** Incoming x-request-id to propagate through internal calls */
   requestId?: string;
+  /** Similarity threshold for vector search (default 0.3) */
+  threshold?: number;
 }
 
 export interface RAGKBOptions extends RAGSearchOptions {
@@ -101,8 +103,10 @@ async function callVectorSearch(
   supabaseUrl: string,
   query: string,
   tables: "kb" | "practice" | "both",
-  opts: { limit?: number; category?: string | null; referenceDate?: string | null; requestId?: string } = {}
+  opts: { limit?: number; category?: string | null; referenceDate?: string | null; requestId?: string; threshold?: number } = {}
 ): Promise<VectorSearchCallResult> {
+  const effectiveThreshold = opts.threshold ?? 0.3;
+  console.log(`[RAG] Using threshold: ${effectiveThreshold}`);
   try {
     // Internal calls authenticate via x-internal-key only (set by callInternalFunction).
     // Authorization header is intentionally omitted: vector-search creates its
@@ -115,7 +119,7 @@ async function callVectorSearch(
         tables,
         category: opts.category || undefined,
         limit: opts.limit || 10,
-        threshold: 0.3,
+        threshold: effectiveThreshold,
         reference_date: opts.referenceDate || undefined,
       },
       {
@@ -216,6 +220,7 @@ export async function searchKB(opts: RAGKBOptions): Promise<RAGResult<KBSearchRe
     limit: 10,
     referenceDate,
     requestId: opts.requestId,
+    threshold: opts.threshold,
   });
 
   const keywordPromise = (async (): Promise<KBSearchResult[]> => {
@@ -311,6 +316,7 @@ export async function searchPractice(opts: RAGPracticeOptions): Promise<RAGResul
     limit: 10,
     category,
     requestId: opts.requestId,
+    threshold: opts.threshold,
   });
 
   const keywordPromise = (async (): Promise<PracticeSearchResult[]> => {
