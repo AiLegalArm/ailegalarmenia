@@ -677,7 +677,7 @@ serve(async (req) => {
       const searchQuery = rawSearchQuery.length > MAX_QUERY_LENGTH ? rawSearchQuery.substring(0, MAX_QUERY_LENGTH) : rawSearchQuery;
 
       // Dynamic threshold: stricter when anchors already provided precise sources
-      const ragThreshold = anchors.length > 0 ? 0.55 : 0.65;
+      const ragThreshold = anchors.length > 0 ? 0.75 : 0.65;
       console.log(`[AI_ANALYZE] RAG threshold: ${ragThreshold} (anchors: ${anchors.length})`);
 
       // Category allowlist based on case_type
@@ -704,7 +704,7 @@ serve(async (req) => {
       });
 
       if (rag.kbResults.length > 0) {
-        ragContext = "\n\n## Relevant Legal Sources from RA Knowledge Base:\n\n";
+        ragContext += "\n\n## Relevant Legal Sources from RA Knowledge Base:\n\n";
         rag.kbResults.forEach((doc, index: number) => {
           ragContext += `### ${index + 1}. ${doc.title} (${doc.category})\n`;
           ragContext += `Source: ${doc.source_name || "RA Legal Database"}\n`;
@@ -712,7 +712,7 @@ serve(async (req) => {
         });
         sourcesUsed.push(...rag.sources.filter(s => !s.category || !['criminal','civil','administrative','echr','constitutional'].includes(s.category)));
       } else {
-        ragContext = "\n\nNote: No specific legal sources found in knowledge base. Analysis based on general knowledge of RA legislation.\n";
+        ragContext += "\n\nNote: No specific legal sources found in knowledge base. Analysis based on general knowledge of RA legislation.\n";
       }
 
       if (rag.practiceResults.length > 0) {
