@@ -4,12 +4,15 @@ import { log, warn, err } from "../_shared/safe-logger.ts";
 
 import { handleCors } from "../_shared/edge-security.ts";
 
-// ─── Hard caps ───────────────────────────────────────────────────────────────
+// ─── Hard caps (env-overridable) ─────────────────────────────────────────────
 const MAX_KB_DOCS = 10;
-const MAX_KB_CHUNKS = 50;
+const MAX_KB_CHUNKS = Number(Deno.env.get("MAX_KB_CHUNKS_RETURNED")) || 40;
 const MAX_PRACTICE_DOCS = 20;
+const MAX_PRACTICE_CHUNKS = Number(Deno.env.get("MAX_PRACTICE_CHUNKS_RETURNED")) || 40;
 const MAX_CHUNKS_PER_DOC = 6;
 const MAX_PREVIEW_CHARS = 500;
+const MAX_QUERY_LENGTH = Number(Deno.env.get("MAX_QUERY_LENGTH")) || 2000;
+const MAX_RESULTS = Number(Deno.env.get("MAX_RESULTS")) || 60;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +47,7 @@ function normalizeQuery(raw: string): string {
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (q.length > 200) q = q.substring(0, 200);
+  if (q.length > MAX_QUERY_LENGTH) q = q.substring(0, MAX_QUERY_LENGTH);
   return q;
 }
 
@@ -99,7 +102,9 @@ serve(async (req) => {
       return jsonRes({ error: "Query is required" }, 400);
     }
 
-    const query = normalizeQuery(rawQuery);
+    const normalized = normalizeQuery(rawQuery);
+    // Clamp to MAX_QUERY_LENGTH (env-overridable)
+    const query = normalized.length > MAX_QUERY_LENGTH ? normalized.substring(0, MAX_QUERY_LENGTH) : normalized;
     if (query.length < 2) {
       return jsonRes({ error: "Query too short" }, 400);
     }
@@ -121,7 +126,7 @@ serve(async (req) => {
       sb.rpc("search_legal_practice_chunks", {
         p_query: query,
         category_filter: practiceCategory,
-        p_limit_chunks: 120,
+        p_limit_chunks: MAX_PRACTICE_CHUNKS,
         p_limit_docs: MAX_PRACTICE_DOCS,
         p_chunks_per_doc: MAX_CHUNKS_PER_DOC,
       }),

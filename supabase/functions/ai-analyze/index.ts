@@ -634,8 +634,11 @@ serve(async (req) => {
     // ====================================================================
     const { extractNormRefs } = await import("../_shared/norm-ref-extractor.ts");
     const { lookupByAnchors } = await import("../_shared/rag-search.ts");
-    const anchors = extractNormRefs(fullCaseText);
-    console.log("[AI_ANALYZE] Anchors found:", anchors.length);
+    const MAX_ANCHORS = Number(Deno.env.get("MAX_ANCHORS")) || 50;
+    const MAX_QUERY_LENGTH = Number(Deno.env.get("MAX_QUERY_LENGTH")) || 2000;
+    const allAnchors = extractNormRefs(fullCaseText);
+    const anchors = allAnchors.slice(0, MAX_ANCHORS);
+    console.log(`[AI_ANALYZE] Anchors found: ${allAnchors.length}, capped to: ${anchors.length}`);
 
     let preciseSources: Array<{ id: string; title: string; category: string; source_name: string; content_text: string; article_number: string | null; anchor_raw: string }> = [];
     if (anchors.length > 0) {
@@ -670,7 +673,8 @@ serve(async (req) => {
     // PHASE 2: RAG search — now runs AFTER case materials are loaded
     // ====================================================================
     if (caseFacts || legalQuestion) {
-      const searchQuery = `${caseFacts || ""} ${legalQuestion || ""}`.trim();
+      const rawSearchQuery = `${caseFacts || ""} ${legalQuestion || ""}`.trim();
+      const searchQuery = rawSearchQuery.length > MAX_QUERY_LENGTH ? rawSearchQuery.substring(0, MAX_QUERY_LENGTH) : rawSearchQuery;
 
       // Dynamic threshold: stricter when anchors already provided precise sources
       const ragThreshold = anchors.length > 0 ? 0.55 : 0.65;

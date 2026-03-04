@@ -27,8 +27,9 @@ serve(async (req) => {
       );
     }
 
-    // P1 FIX: Cap query length to prevent expensive ILIKE/RPC operations
-    const MAX_QUERY_LENGTH = 2000;
+    // P1 FIX: Cap query length — env-overridable for large legal queries
+    const MAX_QUERY_LENGTH = Number(Deno.env.get("MAX_QUERY_LENGTH")) || 2000;
+    const MAX_RESULTS = Number(Deno.env.get("MAX_RESULTS")) || 60;
     const query = rawQuery.length > MAX_QUERY_LENGTH ? rawQuery.substring(0, MAX_QUERY_LENGTH) : rawQuery;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -41,8 +42,8 @@ serve(async (req) => {
       global: { headers: { "x-statement-timeout": "8000" } },
     });
 
-    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 30);
-    const candidateLimit = Math.min(safeLimit * 3, 50);
+    const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), MAX_RESULTS);
+    const candidateLimit = Math.min(safeLimit * 3, MAX_RESULTS);
 
     const results: { kb: unknown[]; practice: unknown[] } = { kb: [], practice: [] };
 
@@ -416,7 +417,8 @@ async function rerankWithAI(
 function sanitize(input: string): string {
   return input
     .replace(/[%_]/g, "")
-    .replace(/[(),.*\\]/g, "")
+    .replace(/[(),.*\\;:!'"]/g, "")
+    .replace(/\b(?:eq|neq|gt|gte|lt|lte|like|ilike|is|in|not|or|and|fts|plfts|phfts|wfts)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim()
     .substring(0, 200);

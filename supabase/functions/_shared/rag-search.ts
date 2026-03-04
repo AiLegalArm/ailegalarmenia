@@ -17,6 +17,12 @@
 import type { KBSearchResult, PracticeSearchResult, VectorSearchResponse } from "./rag-types.ts";
 import { callInternalFunction } from "./edge-security.ts";
 
+// ─── Env-configurable guardrails (safe defaults, override via env) ──────────
+const MAX_QUERY_LENGTH = Number(Deno.env.get("MAX_QUERY_LENGTH")) || 2000;
+const MAX_RESULTS = Number(Deno.env.get("MAX_RESULTS")) || 60;
+const MAX_KB_CHUNKS_RETURNED = Number(Deno.env.get("MAX_KB_CHUNKS_RETURNED")) || 40;
+const MAX_PRACTICE_CHUNKS_RETURNED = Number(Deno.env.get("MAX_PRACTICE_CHUNKS_RETURNED")) || 40;
+
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 export interface RAGSearchOptions {
@@ -82,14 +88,20 @@ export function extractKeywords(text: string, maxCount = 10): string[] {
     .slice(0, maxCount);
 }
 
-/** Sanitize keyword for Postgrest ILIKE (remove special chars) */
+/** Sanitize keyword for Postgrest ILIKE (remove special chars + PostgREST operators) */
 export function sanitizeForPostgrest(input: string): string {
   return input
     .replace(/[%_]/g, "")
-    .replace(/[(),.*\\]/g, "")
+    .replace(/[(),.*\\;:!'"]/g, "")
+    .replace(/\b(?:eq|neq|gt|gte|lt|lte|like|ilike|is|in|not|or|and|fts|plfts|phfts|wfts)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim()
     .substring(0, 200);
+}
+
+/** Truncate query to MAX_QUERY_LENGTH */
+export function clampQuery(raw: string): string {
+  return raw.length > MAX_QUERY_LENGTH ? raw.substring(0, MAX_QUERY_LENGTH) : raw;
 }
 
 // ─── Vector Search Helper ───────────────────────────────────────────────────
@@ -211,8 +223,9 @@ function dedup<T extends { id: string }>(
  * Returns deduplicated, scored, trimmed results.
  */
 export async function searchKB(opts: RAGKBOptions): Promise<RAGResult<KBSearchResult>> {
-  const { supabase, supabaseUrl, supabaseKey, query, referenceDate } = opts;
-  const limit = opts.limit ?? 8;
+  const { supabase, supabaseUrl, supabaseKey, referenceDate } = opts;
+  const query = clampQuery(opts.query);
+  const limit = Math.min(opts.limit ?? 8, MAX_KB_CHUNKS_RETURNED);
   const snippetLen = opts.snippetLength ?? 4000;
   const keywords = extractKeywords(query);
   const safeKeywords = keywords.map(sanitizeForPostgrest).filter((k) => k.length > 0);
@@ -321,8 +334,9 @@ export async function searchKB(opts: RAGKBOptions): Promise<RAGResult<KBSearchRe
  * Returns deduplicated, scored, trimmed results.
  */
 export async function searchPractice(opts: RAGPracticeOptions): Promise<RAGResult<PracticeSearchResult>> {
-  const { supabase, supabaseUrl, supabaseKey, query, category } = opts;
-  const limit = opts.limit ?? 5;
+  const { supabase, supabaseUrl, supabaseKey, category } = opts;
+  const query = clampQuery(opts.query);
+  const limit = Math.min(opts.limit ?? 5, MAX_PRACTICE_CHUNKS_RETURNED);
   const keywords = extractKeywords(query, 8);
   const safeKeywords = keywords.map(sanitizeForPostgrest).filter((k) => k.length > 0);
 
@@ -520,8 +534,10 @@ export interface AnchorSource {
  * Returns sources compatible with Citation Guard format.
  */
 export async function lookupByAnchors(params: LookupByAnchorsParams): Promise<AnchorSource[]> {
-  const { anchors, caseType, referenceDate, supabase } = params;
-  if (!anchors || anchors.length === 0) return [];
+  const MAX_ANCHORS = Number(Deno.env.get("MAX_ANCHORS")) || 50;
+  const { caseType, referenceDate, supabase } = params;
+  const anchors = (params.anchors || []).slice(0, MAX_ANCHORS);
+  if (anchors.length === 0) return [];
 
   const allowedCategories = caseType ? CATEGORY_MAP[caseType] || [] : [];
   const seen = new Set<string>();
@@ -619,17 +635,20 @@ export async function dualSearch(opts: RAGSearchOptions & {
   fullPracticeText?: boolean;
   categoryAllowlist?: string[];
 }): Promise<DualRAGResult> {
-  console.log("[RAG] Query length:", opts.query.length);
+  // Clamp query at entry point
+  const clampedQuery = clampQuery(opts.query);
+  const optsWithClamp = { ...opts, query: clampedQuery };
+  console.log("[RAG] Query length:", clampedQuery.length, "(clamped from", opts.query.length, ")");
 
   const [kb, practice] = await Promise.all([
     searchKB({
-      ...opts,
-      limit: opts.kbLimit ?? 8,
+      ...optsWithClamp,
+      limit: Math.min(opts.kbLimit ?? 8, MAX_KB_CHUNKS_RETURNED),
       snippetLength: opts.kbSnippetLength ?? 4000,
     }),
     searchPractice({
-      ...opts,
-      limit: opts.practiceLimit ?? 5,
+      ...optsWithClamp,
+      limit: Math.min(opts.practiceLimit ?? 5, MAX_PRACTICE_CHUNKS_RETURNED),
     }),
   ]);
 
