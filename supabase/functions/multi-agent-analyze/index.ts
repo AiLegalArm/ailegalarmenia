@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
-import { MULTI_AGENT_ANALYSIS, buildModelParams } from "../_shared/model-config.ts";
+// model-config import removed — all AI calls routed via openai-router.ts (callText)
 import { redactForLog } from "../_shared/pii-redactor.ts";
 import { searchKB, searchPractice, formatKBContext, formatPracticeContext as formatPracticeCtx } from "../_shared/rag-search.ts";
 import { parseReferencesText, buildUserSourcesBlock } from "../_shared/reference-sources.ts";

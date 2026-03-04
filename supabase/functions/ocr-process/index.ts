@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
-import { OCR_EXTRACTION, buildModelParams } from "../_shared/model-config.ts";
+// model-config import removed — all AI calls routed via gateway-bypass.ts → openai-router.ts
 import { redactForLog } from "../_shared/pii-redactor.ts";
 import { parseDocx } from "../_shared/docx-parser.ts";
 

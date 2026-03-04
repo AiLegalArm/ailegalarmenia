@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { sandboxUserInput, secureSandbox, logInjectionAttempt, sanitizeUserInput, ANTI_INJECTION_RULES } from "../_shared/prompt-armor.ts";
 import { applyBudgets, logTokenUsage, type RankedContent } from "../_shared/token-budget.ts";
-import { LEGAL_CHAT, buildModelParams } from "../_shared/model-config.ts";
+// model-config import removed — all AI calls routed via gateway-bypass.ts → openai-router.ts
 import { redactForLog } from "../_shared/pii-redactor.ts";
 import { log, warn, err } from "../_shared/safe-logger.ts";
 import { searchKB, searchPractice, formatKBContext, formatPracticeContext as formatPracticeCtx, temporalDisclaimer } from "../_shared/rag-search.ts";
