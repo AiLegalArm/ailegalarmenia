@@ -85,11 +85,18 @@ function authorityRank(src: { category?: string; source_name?: string; title?: s
   return 10;
 }
 
-interface MergedSource {
+type SourceType = "kb" | "practice" | "anchor";
+
+interface UnifiedSource {
+  id: string;
   title: string;
-  category: string;
-  source_name: string;
-  id?: string;
+  category?: string;
+  source_name?: string;
+  source_type: SourceType;
+  score?: number;
+}
+
+interface MergedSource extends UnifiedSource {
   anchorMatch: boolean;
   semanticScore: number;
 }
@@ -98,39 +105,45 @@ interface MergedSource {
  *  Dedup by id, sort by: anchorMatch DESC → authorityRank DESC → semanticScore DESC,
  *  cap at MAX_CITED_IDS. */
 function mergeAndDeduplicate(
-  precise: Array<{ id: string; title: string; category: string; source_name: string }>,
-  semantic: Array<{ title: string; category?: string; source_name?: string; id?: string; similarity?: number; score?: number }>,
-): MergedSource[] {
+  precise: UnifiedSource[],
+  semantic: UnifiedSource[],
+): UnifiedSource[] {
   const seen = new Set<string>();
   const all: MergedSource[] = [];
 
   // Collect precise sources (anchor-matched)
   for (const src of precise) {
-    const key = src.id;
+    const key = `${src.source_type}:${src.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
     all.push({
+      id: src.id,
       title: src.title,
       category: src.category,
       source_name: src.source_name,
-      id: src.id,
+      source_type: src.source_type,
+      score: src.score,
       anchorMatch: true,
-      semanticScore: 0,
+      semanticScore: src.score || 0,
     });
   }
 
   // Collect semantic sources
   for (const src of semantic) {
-    const key = src.id || src.title;
+    const key = src.id
+      ? `${src.source_type}:${src.id}`
+      : `${src.source_type}:${src.title}:${src.source_name || ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     all.push({
-      title: src.title,
-      category: src.category || "",
-      source_name: src.source_name || "",
       id: src.id,
+      title: src.title,
+      category: src.category,
+      source_name: src.source_name,
+      source_type: src.source_type,
+      score: src.score,
       anchorMatch: false,
-      semanticScore: (src as Record<string, unknown>).similarity as number || (src as Record<string, unknown>).score as number || 0,
+      semanticScore: src.score || 0,
     });
   }
 
@@ -145,7 +158,7 @@ function mergeAndDeduplicate(
     return b.semanticScore - a.semanticScore;
   });
 
-  return all.slice(0, MAX_CITED_IDS);
+  return all.slice(0, MAX_CITED_IDS).map(({ anchorMatch, semanticScore, ...source }) => source);
 }
 
 // Legal AI System Prompts \u2014 STRICTLY for Republic of Armenia (RA) law
@@ -343,7 +356,7 @@ serve(async (req) => {
 
     // RAG: Search knowledge base for relevant context — HYBRID: vector + keyword
     let ragContext = "";
-    const sourcesUsed: Array<{ title: string; category: string; source_name: string }> = [];
+    const sourcesUsed: UnifiedSource[] = [];
 
     // Resolve reference date for temporal legislation filtering
     let referenceDate: string | null = null;
@@ -641,6 +654,7 @@ serve(async (req) => {
     console.log(`[AI_ANALYZE] Anchors found: ${allAnchors.length}, capped to: ${anchors.length}`);
 
     let preciseSources: Array<{ id: string; title: string; category: string; source_name: string; content_text: string; article_number: string | null; anchor_raw: string }> = [];
+    const anchorSources: UnifiedSource[] = [];
     if (anchors.length > 0) {
       // Load case for case_type
       const { data: caseData } = await supabase
@@ -664,7 +678,13 @@ serve(async (req) => {
           ragContext += `### ${src.title} (\u0570\u0578\u0564\u057e\u0561\u056e ${src.article_number || "N/A"}, ${src.category})\n`;
           ragContext += `Source: ${src.source_name}\nID: ${src.id}\n`;
           ragContext += `${src.content_text}\n\n---\n\n`;
-          sourcesUsed.push({ title: src.title, category: src.category, source_name: src.source_name });
+          anchorSources.push({
+            id: src.id,
+            title: src.title,
+            category: src.category,
+            source_name: src.source_name,
+            source_type: "anchor",
+          });
         }
       }
     }
@@ -710,7 +730,14 @@ serve(async (req) => {
           ragContext += `Source: ${doc.source_name || "RA Legal Database"}\n`;
           ragContext += `${(doc.content_text || '').substring(0, 4000)}\n\n`;
         });
-        sourcesUsed.push(...rag.sources.filter(s => !s.category || !['criminal','civil','administrative','echr','constitutional'].includes(s.category)));
+        sourcesUsed.push(...rag.kbResults.map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          category: doc.category,
+          source_name: doc.source_name || "RA Legal Database",
+          source_type: "kb" as const,
+          score: doc.similarity || doc.score || doc.rank,
+        })));
       } else {
         ragContext = "\n\nNote: No specific legal sources found in knowledge base. Analysis based on general knowledge of RA legislation.\n";
       }
@@ -723,8 +750,13 @@ serve(async (req) => {
         ragContext += "\n\n## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n";
         ragContext += "## KB \u0540\u0535\u0546\u0531\u053F\u0531\u0545\u053B\u0546 \u0532\u0531\u0536\u0531\u0545\u053B \u0531\u054E\u0531\u0550\u054F\n";
         ragContext += "## \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n";
-        sourcesUsed.push(...rag.sources.filter(s => s.category && ['criminal','civil','administrative','echr','constitutional'].includes(s.category)).map(s => ({
-          ...s, source_name: s.source_name || "Legal Practice KB",
+        sourcesUsed.push(...rag.practiceResults.map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          category: doc.practice_category,
+          source_name: doc.court_name || "Legal Practice KB",
+          source_type: "practice" as const,
+          score: doc.similarity || doc.score || doc.rank || doc.relevance_rank,
         })));
       } else {
         ragContext += "\n\n## \u0534\u0561\u057F\u0561\u056F\u0561\u0576 \u057A\u0580\u0561\u056F\u057F\u056B\u056F\u0561\u0575\u056B \u0570\u0561\u0574\u0561\u057A\u0561\u057F\u0561\u057D\u056D\u0561\u0576 \u0578\u0580\u0578\u0577\u0578\u0582\u0574\u0576\u0565\u0580 \u0579\u0565\u0576 \u0563\u057F\u0576\u057E\u0565\u056C\u0589\n";
@@ -734,13 +766,13 @@ serve(async (req) => {
       console.log(`RAG search: KB=${rag.kbResults.length}, Practice=${rag.practiceResults.length}`);
 
       // Merge anchor-based + semantic sources, dedup, sort by hierarchy, cap at 50
-      const mergedSources = mergeAndDeduplicate(preciseSources, sourcesUsed);
+      const mergedSources = mergeAndDeduplicate(anchorSources, sourcesUsed);
       // Replace sourcesUsed with merged result
       sourcesUsed.length = 0;
       sourcesUsed.push(...mergedSources);
       console.log("[AI_ANALYZE] Final sources:", sourcesUsed.length);
-      console.log("[AI_ANALYZE] Top sources ranks:", mergedSources.slice(0, 5).map(s => ({
-        id: s.id, rank: authorityRank(s), anchor: s.anchorMatch,
+      console.log("[AI_ANALYZE] Top sources ranks:", sourcesUsed.slice(0, 5).map(s => ({
+        id: s.id, rank: authorityRank(s), source_type: s.source_type,
       })));
     }
     // Add temporal versioning disclaimer
