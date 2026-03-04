@@ -21,7 +21,7 @@ import { CROSS_EXAM_PROMPT, CROSS_EXAM_SCHEMA } from "./prompts/cross-exam.ts";
 import { BASE_SYSTEM_PROMPT } from "./system.ts";
 import { sandboxUserInput, secureSandbox, logInjectionAttempt, ANTI_INJECTION_RULES } from "../_shared/prompt-armor.ts";
 import { applyBudgets, logTokenUsage, type RankedContent } from "../_shared/token-budget.ts";
-import { LEGAL_DETERMINISTIC, buildModelParams } from "../_shared/model-config.ts";
+// model-config import removed — all AI calls routed via openai-router.ts (callText/callJSON)
 import { redactPII } from "../_shared/pii-redactor.ts";
 import { dualSearch, formatKBContext, formatPracticeContext as formatPracticeCtx, temporalDisclaimer } from "../_shared/rag-search.ts";
 import { parseReferencesText, buildUserSourcesBlock } from "../_shared/reference-sources.ts";

@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { log, err } from "../_shared/safe-logger.ts";
 import { sandboxUserInput, secureSandbox, logInjectionAttempt, ANTI_INJECTION_RULES } from "../_shared/prompt-armor.ts";
 import { applyBudgets, logTokenUsage, type RankedContent } from "../_shared/token-budget.ts";
-import { DOCUMENT_GENERATION, buildModelParams } from "../_shared/model-config.ts";
+// model-config import removed — all AI calls routed via openai-router.ts (callText)
 import { DOCUMENT_PROMPTS } from "./prompts/index.ts";
 import { SYSTEM_PROMPTS } from "./system-prompts.ts";
 import {
