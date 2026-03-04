@@ -40,14 +40,20 @@ serve(async (req) => {
   try {
     // === AUTH GUARD ===
     const authHeader = req.headers.get("Authorization") ?? "";
-    const sb = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const authClient = createClient(
+      supabaseUrl,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const token = authHeader.replace('Bearer ', '');
-    const { data, error: authError } = await sb.auth.getClaims(token);
-    if (authError || !data?.claims) {
+    const { data: userData, error: authError } = await authClient.auth.getUser();
+    if (authError || !userData?.user?.id) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -58,9 +64,25 @@ serve(async (req) => {
     const { caseId } = await req.json();
     if (!caseId) throw new Error("caseId is required");
 
-    console.log("Processing extraction for case:", caseId);
+    // === CASE ACCESS CHECK (P0: IDOR prevention) ===
+    // Uses authClient (user JWT + RLS) — NOT service_role
+    const { data: caseAccess, error: caseAccessErr } = await authClient
+      .from("cases")
+      .select("id")
+      .eq("id", caseId)
+      .maybeSingle();
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    if (caseAccessErr || !caseAccess) {
+      console.warn(`[extract-case-fields] Access denied: user=${userData.user.id} case=${caseId}`);
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // === END CASE ACCESS CHECK ===
+
+    console.log(`[extract-case-fields] Processing case=${caseId} user=${userData.user.id}`);
+
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
