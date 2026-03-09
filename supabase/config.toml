@@ -35,13 +35,10 @@ verify_jwt = false
 [functions.legal-practice-import]
 verify_jwt = false
 
-[functions.kb-backfill-chunks]
+[functions.rechunk-backfill]
 verify_jwt = false
 
 [functions.legal-practice-enrich]
-verify_jwt = false
-
-[functions.generate-embeddings]
 verify_jwt = false
 
 [functions.vector-search]

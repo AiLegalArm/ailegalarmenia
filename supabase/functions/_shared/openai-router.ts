@@ -38,57 +38,57 @@ export interface GovernanceMeta {
  * Gemini Pro reserved for strict JSON. Flash/Flash-lite for cheap utils.
  */
 export const MODEL_MAP: Record<string, ModelConfig> = {
-  // ── Primary legal reasoning (Lovable AI Gateway) ──────────────────────────
+  // ── Primary legal reasoning ───────────────────────────────────────────────
   "ai-analyze": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.15,
     max_tokens: 14000,
-    description: "Case analysis (Gemini Flash)",
+    description: "Case analysis (Claude 3.5 Sonnet)",
   },
   "multi-agent-analyze": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Multi-agent analysis (Gemini Flash)",
+    description: "Multi-agent analysis (Claude 3.5 Sonnet)",
   },
   "generate-complaint": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.1,
     max_tokens: 14000,
-    description: "Complaint drafting (Gemini Flash)",
+    description: "Complaint drafting (Claude 3.5 Sonnet)",
   },
   "legal-chat": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Legal chat (Gemini Flash)",
+    description: "Legal chat (Claude 3.5 Sonnet)",
   },
   "analyze-files-for-complaint": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "File analysis (Gemini Flash)",
+    description: "File analysis (Claude 3.5 Sonnet)",
   },
   "generate-document": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 10000,
-    description: "Documents (Gemini Flash)",
+    description: "Documents (Claude 3.5 Sonnet)",
   },
 
   // ── Strict JSON ───────────────────────────────────────────────────────────
   "extract-case-fields": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.15,
     max_tokens: 16000,
-    description: "Extract fields (Gemini Flash)",
+    description: "Extract fields (Gemini 2.5 Pro)",
   },
   "kb-search-assistant": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.2,
     max_tokens: 200,
     json_mode: true,
-    description: "KB keywords JSON (Gemini Flash)",
+    description: "KB keywords JSON (Gemini 2.5 Pro)",
   },
 
   // ── Utilities ─────────────────────────────────────────────────────────────
@@ -99,16 +99,16 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "Transcription (Gemini Flash)",
   },
   "echr-translate": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.1,
     max_tokens: 8000,
-    description: "ECHR translate (Gemini Flash)",
+    description: "ECHR translate (Claude 3.5 Sonnet)",
   },
   "legal-practice-enrich": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Enrich practice (Gemini Flash)",
+    description: "Enrich practice (Claude 3.5 Sonnet)",
   },
   "vector-search-rerank": {
     model: "google/gemini-2.5-flash",
@@ -137,16 +137,16 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "KB fetch PDF (Gemini Flash, bypass:multimodal)",
   },
   "legal-practice-import": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0,
     max_tokens: 8000,
-    description: "Practice import extract (Gemini Flash)",
+    description: "Practice import extract (Gemini 2.5 Pro)",
   },
   "prompt-armor-repair": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0,
     max_tokens: 8000,
-    description: "JSON repair (Gemini Flash)",
+    description: "JSON repair (Gemini 2.5 Pro)",
   },
 
   // ── Embeddings (OpenAI only — always direct, no gateway) ──────────────────
@@ -159,34 +159,34 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Admin utilities ─────────────────────────────────────────────────────
   "admin-ai-chat": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.3,
     max_tokens: 16000,
-    description: "Admin AI chat (Gemini Flash)",
+    description: "Admin AI chat (Claude 3.5 Sonnet)",
   },
 
   // ── Worker aliases ────────────────────────────────────────────────────────
   "practice-ai-enrich-worker": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Enrich practice worker (Gemini Flash)",
+    description: "Enrich practice worker (Claude 3.5 Sonnet)",
   },
 
   // ── Map-Reduce summarizer ─────────────────────────────────────────────────
   "map-reduce-summarize": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.1,
     max_tokens: 4000,
-    description: "Map-Reduce chunk summarizer (Gemini Flash)",
+    description: "Map-Reduce chunk summarizer (Claude 3.5 Sonnet)",
   },
 
   // ── Translation ───────────────────────────────────────────────────────────
   "translate-to-armenian": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0.1,
     max_tokens: 4096,
-    description: "Legal translation to Armenian (Gemini Flash)",
+    description: "Legal translation to Armenian (Claude 3.5 Sonnet)",
   },
 };
 
@@ -202,35 +202,35 @@ const ROLE_OVERRIDES: Record<string, Partial<ModelConfig>> = {
   "ai-analyze:legal_position_comparator": { description: "Comparator" },
   // ── Deterministic draft (temp=0) ───────────────────────────────────────────
   "ai-analyze:draft_deterministic": {
-    model: "google/gemini-2.5-flash",
+    model: "anthropic/claude-3.5-sonnet",
     temperature: 0,
     max_tokens: 14000,
-    description: "Deterministic draft (Gemini Flash temp=0)",
+    description: "Deterministic draft (Claude 3.5 Sonnet temp=0)",
   },
-  // ── JSON roles (Gemini Flash) ─────────────────────────────────────────────
+  // ── JSON roles (Gemini Pro) ─────────────────────────────────────────────
   "ai-analyze:precedent_citation": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.2,
     max_tokens: 8000,
-    description: "Precedent JSON (Gemini Flash)",
+    description: "Precedent JSON (Gemini 2.5 Pro)",
   },
   "ai-analyze:cross_exam": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.2,
     max_tokens: 8000,
-    description: "Cross-exam JSON (Gemini Flash)",
+    description: "Cross-exam JSON (Gemini 2.5 Pro)",
   },
   "ai-analyze:deadline_rules": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.2,
     max_tokens: 8000,
-    description: "Deadlines JSON (Gemini Flash)",
+    description: "Deadlines JSON (Gemini 2.5 Pro)",
   },
   "ai-analyze:law_update_summary": {
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-2.5-pro",
     temperature: 0.2,
     max_tokens: 8000,
-    description: "Law update JSON (Gemini Flash)",
+    description: "Law update JSON (Gemini 2.5 Pro)",
   },
 };
 
