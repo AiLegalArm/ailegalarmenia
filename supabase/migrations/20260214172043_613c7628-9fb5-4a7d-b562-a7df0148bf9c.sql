@@ -1,0 +1,1 @@
+ALTER TABLE public.legal_practice_kb ADD COLUMN IF NOT EXISTS import_ref TEXT;

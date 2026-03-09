@@ -1,0 +1,1 @@
+UPDATE public.app_settings SET value = 'openrouter', updated_at = now() WHERE key = 'ai_provider';

@@ -1,0 +1,1 @@
+UPDATE app_settings SET value = 'gateway', updated_at = now() WHERE key = 'ai_provider';

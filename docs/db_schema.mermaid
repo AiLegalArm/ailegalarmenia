@@ -1,0 +1,212 @@
+erDiagram
+    %% =============================================
+    %% AI LEGAL ARMENIA - DATABASE SCHEMA
+    %% =============================================
+
+    profiles {
+        uuid id PK "References auth.users"
+        text email "NOT NULL"
+        text full_name
+        text phone
+        text avatar_url
+        timestamptz created_at "NOT NULL DEFAULT now()"
+        timestamptz updated_at "NOT NULL DEFAULT now()"
+    }
+
+    user_roles {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid user_id FK "NOT NULL -> auth.users"
+        app_role role "NOT NULL DEFAULT 'client'"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    cases {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        text case_number "NOT NULL UNIQUE"
+        text title "NOT NULL"
+        text description
+        case_status status "NOT NULL DEFAULT 'open'"
+        case_priority priority "NOT NULL DEFAULT 'medium'"
+        uuid client_id FK "-> auth.users"
+        uuid lawyer_id FK "-> auth.users"
+        text court_name
+        timestamptz court_date
+        text notes
+        timestamptz created_at "NOT NULL DEFAULT now()"
+        timestamptz updated_at "NOT NULL DEFAULT now()"
+        timestamptz deleted_at "soft delete"
+    }
+
+    case_files {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid case_id FK "NOT NULL -> cases"
+        text filename "NOT NULL"
+        text original_filename "NOT NULL"
+        text storage_path "NOT NULL"
+        text file_type
+        bigint file_size
+        text hash_sha256
+        integer version "NOT NULL DEFAULT 1"
+        uuid uploaded_by FK "-> auth.users"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+        timestamptz deleted_at "soft delete"
+    }
+
+    knowledge_base {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        text title "NOT NULL"
+        text content_text "NOT NULL - GIN indexed"
+        kb_category category "NOT NULL DEFAULT 'other'"
+        text source_url
+        text source_name
+        date version_date
+        text article_number
+        uuid uploaded_by FK "-> auth.users"
+        boolean is_active "NOT NULL DEFAULT true"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+        timestamptz updated_at "NOT NULL DEFAULT now()"
+    }
+
+    ocr_results {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid file_id FK "NOT NULL -> case_files"
+        text extracted_text "NOT NULL - GIN indexed"
+        numeric confidence "precision 5,2"
+        text language "DEFAULT 'hy'"
+        boolean needs_review "NOT NULL DEFAULT false"
+        uuid reviewed_by FK "-> auth.users"
+        timestamptz reviewed_at
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    audio_transcriptions {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid file_id FK "NOT NULL -> case_files"
+        text transcription_text "NOT NULL - GIN indexed"
+        numeric confidence "precision 5,2"
+        integer duration_seconds
+        text language "DEFAULT 'hy-AM'"
+        jsonb speaker_labels
+        boolean needs_review "NOT NULL DEFAULT false"
+        uuid reviewed_by FK "-> auth.users"
+        timestamptz reviewed_at
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    ai_analysis {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid case_id FK "NOT NULL -> cases"
+        text role "NOT NULL CHECK advocate|prosecutor|judge|aggregator"
+        text prompt_used
+        text response_text "NOT NULL"
+        jsonb sources_used
+        uuid created_by FK "-> auth.users"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    audit_logs {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid user_id FK "-> auth.users"
+        text action "NOT NULL"
+        text table_name
+        uuid record_id
+        jsonb details
+        inet ip_address
+        text user_agent
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    user_feedback {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid user_id FK "-> auth.users"
+        uuid analysis_id FK "-> ai_analysis"
+        uuid case_id FK "-> cases"
+        integer rating "CHECK 1-5"
+        text comment
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    encrypted_pii {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        uuid user_id FK "NOT NULL -> auth.users"
+        text field_name "NOT NULL"
+        bytea encrypted_value "NOT NULL - AES-256"
+        bytea iv "NOT NULL"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+        timestamptz updated_at "NOT NULL DEFAULT now()"
+    }
+
+    error_logs {
+        uuid id PK "DEFAULT gen_random_uuid()"
+        text error_type "NOT NULL CHECK llm|ocr|audio|system"
+        text error_message "NOT NULL"
+        jsonb error_details
+        uuid user_id FK "-> auth.users"
+        uuid case_id FK "-> cases"
+        uuid file_id FK "-> case_files"
+        boolean resolved "NOT NULL DEFAULT false"
+        timestamptz resolved_at
+        uuid resolved_by FK "-> auth.users"
+        timestamptz created_at "NOT NULL DEFAULT now()"
+    }
+
+    %% =============================================
+    %% RELATIONSHIPS
+    %% =============================================
+
+    profiles ||--o{ user_roles : "has roles"
+    profiles ||--o{ cases : "client_id"
+    profiles ||--o{ cases : "lawyer_id"
+    profiles ||--o{ case_files : "uploaded_by"
+    profiles ||--o{ knowledge_base : "uploaded_by"
+    profiles ||--o{ ai_analysis : "created_by"
+    profiles ||--o{ audit_logs : "user_id"
+    profiles ||--o{ user_feedback : "user_id"
+    profiles ||--o{ encrypted_pii : "user_id"
+    profiles ||--o{ error_logs : "user_id"
+    profiles ||--o{ ocr_results : "reviewed_by"
+    profiles ||--o{ audio_transcriptions : "reviewed_by"
+
+    cases ||--o{ case_files : "contains"
+    cases ||--o{ ai_analysis : "analyzed by"
+    cases ||--o{ user_feedback : "feedback for"
+    cases ||--o{ error_logs : "errors for"
+
+    case_files ||--o| ocr_results : "OCR processed"
+    case_files ||--o| audio_transcriptions : "transcribed"
+    case_files ||--o{ error_logs : "errors for"
+
+    ai_analysis ||--o{ user_feedback : "rated by"
+
+    %% =============================================
+    %% ENUMS
+    %% =============================================
+    %% app_role: admin | lawyer | client | auditor
+    %% case_status: open | in_progress | pending | closed | archived
+    %% case_priority: low | medium | high | urgent
+    %% kb_category: constitution | civil_code | criminal_code | labor_code | family_code | administrative_code | tax_code | court_practice | legal_commentary | other
+
+    %% =============================================
+    %% RLS POLICIES SUMMARY
+    %% =============================================
+    %% profiles: Users view/update own; Admins view all; Lawyers view their clients
+    %% user_roles: Users view own; Admins manage all
+    %% cases: Lawyers/Clients view own; Admins/Auditors view all; Lawyers create/update
+    %% case_files: Users view own case files; Lawyers upload; Admins view all
+    %% knowledge_base: Everyone reads active; Admins manage
+    %% audit_logs: Admins/Auditors view; Authenticated insert
+    %% ai_analysis: Users view own case analysis; Lawyers/Admins create
+    %% user_feedback: Users view/create own; Admins view all
+    %% encrypted_pii: Users view/manage own; Admins view
+    %% error_logs: Admins view/manage; System insert
+
+    %% =============================================
+    %% SECURITY DEFINER FUNCTIONS
+    %% =============================================
+    %% has_role(user_id, role) -> boolean
+    %% get_user_roles(user_id) -> app_role[]
+    %% search_knowledge_base(query, limit) -> table
+    %% log_audit(action, table, record_id, details) -> uuid
+    %% log_error(type, message, details, case_id, file_id) -> uuid
+    %% encrypt_pii(user_id, field, value) -> boolean
+    %% decrypt_pii(user_id, field) -> text

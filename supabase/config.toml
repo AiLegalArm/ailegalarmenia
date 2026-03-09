@@ -1,0 +1,105 @@
+project_id = "dbrhbbaoeurjveconszd"
+
+[functions.send-telegram-notification]
+verify_jwt = false
+
+[functions.process-reminder-notifications]
+verify_jwt = false
+
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.generate-complaint]
+wall_clock_limit = 300
+
+[functions.generate-document]
+
+[functions.ai-analyze]
+wall_clock_limit = 300
+[functions.multi-agent-analyze]
+
+[functions.ocr-process]
+
+[functions.audio-transcribe]
+
+[functions.legal-chat]
+
+[functions.extract-case-fields]
+
+[functions.extract-case-form-fields]
+verify_jwt = false
+wall_clock_limit = 300
+
+[functions.analyze-files-for-complaint]
+
+[functions.legal-practice-import]
+verify_jwt = false
+
+[functions.kb-backfill-chunks]
+verify_jwt = false
+
+[functions.legal-practice-enrich]
+verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
+
+[functions.vector-search]
+verify_jwt = false
+
+[functions.legal-document-normalizer]
+verify_jwt = false
+
+[functions.legal-chunker]
+verify_jwt = false
+
+[functions.norm-ref-extractor]
+verify_jwt = false
+
+[functions.kb-table-screenshots]
+verify_jwt = false
+
+[functions.ingest-document]
+verify_jwt = false
+
+[functions.kb-unified-search]
+verify_jwt = false
+
+[functions.embeddings-generate]
+verify_jwt = false
+
+[functions.echr-import]
+
+[functions.dictionary-search]
+
+[functions.dictionary-import-validate]
+
+[functions.practice-chunk-worker]
+verify_jwt = false
+
+[functions.practice-chunk-enqueue]
+verify_jwt = false
+
+[functions.practice-pipeline-orchestrator]
+verify_jwt = false
+
+[functions.practice-embed-worker]
+verify_jwt = false
+
+[functions.practice-ai-enrich-worker]
+verify_jwt = false
+
+[functions.eval-runner]
+
+[functions.dictionary-import-run]
+
+[functions.admin-ai-chat]
+
+[functions.export-data]
+
+[functions.data-sync-to-live]
+verify_jwt = false
+wall_clock_limit = 300
+
+[functions.pipeline-tick]
+verify_jwt = false

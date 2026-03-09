@@ -1,0 +1,21 @@
+-- Add new categories to kb_category enum
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'criminal_procedure_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'civil_procedure_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'administrative_procedure_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'administrative_violations_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'land_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'forest_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'water_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'urban_planning_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'electoral_code';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'state_duty_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'citizenship_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'public_service_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'human_rights_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'anti_corruption_body_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'corruption_prevention_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'mass_media_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'education_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'healthcare_law';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'echr';
+ALTER TYPE kb_category ADD VALUE IF NOT EXISTS 'eaeu_customs_code';

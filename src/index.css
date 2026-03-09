@@ -1,0 +1,275 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+/* Mobile-first: Premium text rendering for Retina/AMOLED */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  font-feature-settings: "kern" 1, "liga" 1;
+}
+
+/* Touch-friendly base - minimum 48px touch targets */
+@layer base {
+  :root {
+    /* Premium spacing for mobile */
+    --spacing-touch: 48px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    
+    /* Premium shadows for depth */
+    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.06), 0 4px 16px -4px hsl(0 0% 0% / 0.08);
+    --shadow-medium: 0 4px 12px -4px hsl(0 0% 0% / 0.1), 0 8px 24px -8px hsl(0 0% 0% / 0.14);
+    --shadow-elevated: 0 8px 24px -8px hsl(0 0% 0% / 0.14), 0 16px 48px -16px hsl(0 0% 0% / 0.18);
+
+    /* Gradient tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(230 80% 56%), hsl(260 85% 62%));
+    --gradient-hero: linear-gradient(160deg, hsl(230 25% 97%), hsl(250 40% 96%), hsl(230 30% 98%));
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.7), hsl(0 0% 100% / 0.4));
+
+    --background: 230 25% 98%;
+    --foreground: 230 25% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 230 25% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 10%;
+
+    --primary: 230 80% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 250 30% 95%;
+    --secondary-foreground: 230 25% 15%;
+
+    --muted: 230 20% 95%;
+    --muted-foreground: 230 10% 46%;
+
+    --accent: 250 40% 94%;
+    --accent-foreground: 230 30% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 20% 90%;
+    --input: 230 20% 90%;
+    --ring: 230 80% 56%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 230 25% 98%;
+    --sidebar-foreground: 230 15% 30%;
+    --sidebar-primary: 230 80% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 250 30% 95%;
+    --sidebar-accent-foreground: 230 25% 15%;
+    --sidebar-border: 230 20% 90%;
+    --sidebar-ring: 230 80% 56%;
+  }
+
+  /* Dark mode */
+  .dark {
+    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.3), 0 4px 16px -4px hsl(0 0% 0% / 0.4);
+    --shadow-medium: 0 4px 12px -4px hsl(0 0% 0% / 0.4), 0 8px 24px -8px hsl(0 0% 0% / 0.5);
+    --shadow-elevated: 0 8px 24px -8px hsl(0 0% 0% / 0.5), 0 16px 48px -16px hsl(0 0% 0% / 0.6);
+
+    --gradient-primary: linear-gradient(135deg, hsl(230 80% 62%), hsl(260 80% 68%));
+    --gradient-hero: linear-gradient(160deg, hsl(230 20% 8%), hsl(250 25% 10%), hsl(230 15% 7%));
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.06), hsl(0 0% 100% / 0.02));
+
+    --background: 230 20% 7%;
+    --foreground: 230 15% 92%;
+
+    --card: 230 18% 10%;
+    --card-foreground: 230 15% 92%;
+
+    --popover: 230 18% 10%;
+    --popover-foreground: 230 15% 92%;
+
+    --primary: 230 80% 65%;
+    --primary-foreground: 230 25% 7%;
+
+    --secondary: 230 15% 16%;
+    --secondary-foreground: 230 15% 92%;
+
+    --muted: 230 15% 16%;
+    --muted-foreground: 230 10% 55%;
+
+    --accent: 250 20% 18%;
+    --accent-foreground: 230 15% 92%;
+
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 15% 16%;
+    --input: 230 15% 16%;
+    --ring: 230 80% 65%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --sidebar-background: 230 18% 8%;
+    --sidebar-foreground: 230 12% 80%;
+    --sidebar-primary: 230 80% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 15% 14%;
+    --sidebar-accent-foreground: 230 12% 80%;
+    --sidebar-border: 230 15% 14%;
+    --sidebar-ring: 230 80% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Prevent text inflation on mobile */
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+    /* Break long words/URLs without forcing per-letter wrapping */
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  /* Utility class for breaking long text */
+  .overflow-wrap-anywhere {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* Ensure smooth scrolling on iOS */
+  html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Mobile-first utility classes */
+@layer components {
+  /* Premium card with soft shadow - mobile optimized */
+  .card-premium {
+    @apply rounded-xl border border-border bg-card;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .card-premium:hover {
+    box-shadow: var(--shadow-medium);
+  }
+
+  /* Touch-friendly button - minimum 48px height */
+  .btn-touch {
+    @apply flex items-center justify-center;
+    min-height: var(--spacing-touch);
+    min-width: var(--spacing-touch);
+    padding: var(--spacing-md);
+    border-radius: 0.75rem;
+  }
+
+  /* Premium badge with glass effect */
+  .badge-premium {
+    @apply inline-flex items-center px-3 py-1.5 text-sm font-medium;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+  }
+
+  /* Mobile-first container with safe area padding */
+  .container-mobile {
+    @apply w-full max-w-7xl mx-auto;
+    padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+    padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+  }
+
+  /* Safe area for bottom */
+  .pb-safe {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* Safe area for top */
+  .pt-safe {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+
+  /* No horizontal overflow */
+  .overflow-x-hidden {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Premium divider */
+  .divider-subtle {
+    @apply border-t border-border/50;
+    height: 0.5px;
+  }
+}
+
+/* TipTap Editor Styles */
+.ProseMirror {
+  outline: none;
+  min-height: 400px;
+}
+
+.ProseMirror p {
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  margin-top: 1.5rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  margin-top: 1rem;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: hsl(var(--muted-foreground));
+  content: "Начните вводить текст...";
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

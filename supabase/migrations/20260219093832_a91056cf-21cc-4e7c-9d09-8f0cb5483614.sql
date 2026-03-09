@@ -1,0 +1,1 @@
+UPDATE public.legal_practice_kb SET is_anonymized = false WHERE is_anonymized = true;

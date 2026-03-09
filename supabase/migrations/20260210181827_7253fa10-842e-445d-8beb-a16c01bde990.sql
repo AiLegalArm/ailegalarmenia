@@ -1,0 +1,1 @@
+ALTER TYPE public.practice_category ADD VALUE IF NOT EXISTS 'constitutional';

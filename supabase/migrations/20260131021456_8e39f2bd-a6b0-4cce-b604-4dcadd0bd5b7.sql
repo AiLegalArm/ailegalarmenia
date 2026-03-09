@@ -1,0 +1,9 @@
+-- Add new category enum values for Knowledge Base
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'real_estate_code';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'housing_code';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'criminal_economic_code';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'justice_ministry_code';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'economic_code';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'cassation_criminal';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'cassation_civil';
+ALTER TYPE public.kb_category ADD VALUE IF NOT EXISTS 'cassation_administrative';
