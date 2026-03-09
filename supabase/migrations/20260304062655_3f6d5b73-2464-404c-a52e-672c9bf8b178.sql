@@ -33,7 +33,7 @@ END;
 $function$;
 
 -- Update cron to use pipeline-tick instead of orchestrator directly
-SELECT cron.unschedule('practice-pipeline-orchestrator');
+SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'practice-pipeline-orchestrator';
 
 SELECT cron.schedule(
   'pipeline-tick',

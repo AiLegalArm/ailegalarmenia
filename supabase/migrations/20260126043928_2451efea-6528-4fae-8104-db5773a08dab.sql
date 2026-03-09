@@ -1,3 +1,6 @@
+-- Ensure pgcrypto functions are accessible (installed in extensions schema on Supabase hosted)
+SET search_path TO public, extensions, auth;
+
 -- Create Admin user
 INSERT INTO auth.users (
   id,

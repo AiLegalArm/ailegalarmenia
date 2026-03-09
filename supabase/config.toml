@@ -10,12 +10,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.generate-complaint]
-wall_clock_limit = 300
+
 
 [functions.generate-document]
 
 [functions.ai-analyze]
-wall_clock_limit = 300
+
 [functions.multi-agent-analyze]
 
 [functions.ocr-process]
@@ -28,7 +28,7 @@ wall_clock_limit = 300
 
 [functions.extract-case-form-fields]
 verify_jwt = false
-wall_clock_limit = 300
+
 
 [functions.analyze-files-for-complaint]
 
@@ -99,7 +99,7 @@ verify_jwt = false
 
 [functions.data-sync-to-live]
 verify_jwt = false
-wall_clock_limit = 300
+
 
 [functions.pipeline-tick]
 verify_jwt = false
