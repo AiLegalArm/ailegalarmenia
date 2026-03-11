@@ -31,10 +31,25 @@ serve(async (req) => {
 
   if (!isInternalAuth) {
     const authHeader = req.headers.get("Authorization") ?? "";
-    const token = authHeader.replace("Bearer ", "").trim();
-    if (!token) {
+    const sbUser = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error: authError } = await sbUser.auth.getUser();
+    if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: isAdmin } = await sbUser.rpc('has_role', {
+      _user_id: user.id,
+      _role: 'admin',
+    });
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -372,7 +387,7 @@ serve(async (req) => {
           }
         }
       } finally {
-        await supabase.rpc("release_backfill_lock").catch(() => {});
+        await supabase.rpc("release_backfill_lock").catch(() => { });
       }
 
       console.log(`[practice-chunk-enqueue] backfill complete: ${totalEnqueued} jobs enqueued across ${pages} pages for ${source}`);
@@ -385,7 +400,7 @@ serve(async (req) => {
           method: "POST",
           headers: buildInternalHeaders(),
           body: JSON.stringify({}),
-        }).catch(() => {});
+        }).catch(() => { });
       } catch { /* ignore */ }
 
       return new Response(JSON.stringify({
@@ -458,10 +473,10 @@ serve(async (req) => {
     // ─── Bulk enqueue via DB RPCs (recommended) ────────────
     if (action === "bulk_enqueue") {
       const batchLimit = Math.min(Math.max(Number(rawSource === "knowledge_base" ? 5000 : 5000), 100), 10000);
-      
+
       const rpcName = source === "knowledge_base" ? "enqueue_batch_kb" : "enqueue_batch_practice";
       const { data: inserted, error: rpcErr } = await supabase.rpc(rpcName, { p_limit: batchLimit });
-      
+
       if (rpcErr) {
         console.error(`[practice-chunk-enqueue] bulk_enqueue RPC error:`, rpcErr.message);
         throw rpcErr;
@@ -478,7 +493,7 @@ serve(async (req) => {
             method: "POST",
             headers: buildInternalHeaders(),
             body: JSON.stringify({}),
-          }).catch(() => {});
+          }).catch(() => { });
         } catch { /* ignore */ }
       }
 

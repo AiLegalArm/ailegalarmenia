@@ -1,6 +1,6 @@
-# Welcome to AI Legal Armenia
+# Welcome to AI Legal Armenia (Cloud-Based Platform)
 
-AI Legal Armenia is a comprehensive legal assistance platform for the Republic of Armenia, powered by artificial intelligence.
+AI Legal Armenia is a comprehensive, fully **cloud-based (online)** legal assistance SaaS platform for the Republic of Armenia, powered by artificial intelligence. Built for high availability, scale, and online access via web browsers.
 
 ## Documentation
 
