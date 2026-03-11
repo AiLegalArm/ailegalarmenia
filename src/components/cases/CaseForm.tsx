@@ -133,12 +133,12 @@ interface CaseFormProps {
   isLoading?: boolean;
 }
 
-export function CaseForm({ 
-  open, 
-  onOpenChange, 
-  onSubmit, 
+export function CaseForm({
+  open,
+  onOpenChange,
+  onSubmit,
   initialData,
-  isLoading 
+  isLoading
 }: CaseFormProps) {
   const { t } = useTranslation('cases');
   const { toast } = useToast();
@@ -161,7 +161,7 @@ export function CaseForm({
     current_stage: z.string().optional().default('preliminary'),
     status: z.enum(['open', 'in_progress', 'pending', 'closed', 'archived']).optional().default('open'),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional().default('medium'),
-    court_name: z.string().optional().default(''),
+    court_name: z.string().min(1, { message: 'required' }),
     court_date: z.string().optional(),
     notes: z.string().optional(),
   });
@@ -193,18 +193,18 @@ export function CaseForm({
 
   useEffect(() => {
     if (initialData) {
-      const courtDate = initialData.court_date 
+      const courtDate = initialData.court_date
         ? new Date(initialData.court_date)
         : undefined;
-      
+
       setSelectedDate(courtDate);
-      
+
       const caseType = (initialData.case_type || 'criminal') as 'criminal' | 'civil' | 'administrative' | 'echr';
       const currentStage = initialData.current_stage || 'preliminary';
-      
+
       // Backward compatibility: if court exists but court_name doesn't, use court
       const courtName = initialData.court_name || initialData.court || '';
-      
+
       form.reset({
         case_number: initialData.case_number,
         title: initialData.title,
@@ -218,8 +218,8 @@ export function CaseForm({
         status: initialData.status,
         priority: initialData.priority,
         court_name: courtName,
-        court_date: initialData.court_date 
-          ? new Date(initialData.court_date).toISOString().split('T')[0] 
+        court_date: initialData.court_date
+          ? new Date(initialData.court_date).toISOString().split('T')[0]
           : '',
         notes: initialData.notes || '',
       });
@@ -313,11 +313,11 @@ export function CaseForm({
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300_000);
-      
+
       const session = (await supabase.auth.getSession()).data.session;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
+
       const resp = await fetch(`${supabaseUrl}/functions/v1/extract-case-form-fields`, {
         method: 'POST',
         headers: {
@@ -329,7 +329,7 @@ export function CaseForm({
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      
+
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
       if (!data?.success || !data?.fields) throw new Error(data?.error || 'Extraction failed');
@@ -383,17 +383,17 @@ export function CaseForm({
       party_role: values.party_role || null,
       appeal_party_role: values.appeal_party_role || null,
       current_stage: values.current_stage || 'preliminary',
-      court: values.court_name || null,
+      court: values.court_name || 'Не указан',
       status: values.status || 'open',
       priority: values.priority || 'medium',
       court_date: values.court_date ? new Date(values.court_date).toISOString() : null,
       description: values.description || null,
-      court_name: values.court_name || null,
+      court_name: values.court_name || 'Не указан',
       notes: values.notes || null,
       facts: values.facts || null,
       legal_question: values.legal_question || null,
     }, pendingFiles.length > 0 ? pendingFiles : undefined);
-    
+
     setPendingFiles([]);
   };
 
@@ -546,7 +546,7 @@ export function CaseForm({
               name="court_name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('court_name')}</FormLabel>
+                  <FormLabel>{t('court_name')} *</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
@@ -727,9 +727,9 @@ export function CaseForm({
             {/* File Upload Section - only for new cases */}
             {!initialData && (
               <div className="space-y-3">
-                <CaseFormFileUpload 
-                  files={pendingFiles} 
-                  onFilesChange={setPendingFiles} 
+                <CaseFormFileUpload
+                  files={pendingFiles}
+                  onFilesChange={setPendingFiles}
                 />
                 {pendingFiles.length > 0 && (
                   <div className="space-y-2">
@@ -766,9 +766,9 @@ export function CaseForm({
             )}
 
             <div className="flex justify-end gap-2 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => onOpenChange(false)}
               >
                 {t('common:cancel')}
