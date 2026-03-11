@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
+import {
   BookOpen,
   BarChart3,
   Database as DatabaseIcon,
@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   BookOpenText,
   ArrowRightLeft,
+  Megaphone,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminKnowledgeBaseTab } from "@/components/admin/AdminKnowledgeBaseTab";
@@ -32,6 +33,7 @@ import { AIProviderSwitch } from "@/components/admin/AIProviderSwitch";
 import { AdminAIChatBot } from "@/components/admin/AdminAIChatBot";
 import { DataMigration } from "@/components/admin/DataMigration";
 import { DataSyncToLive } from "@/components/admin/DataSyncToLive";
+import { PromotionsAdmin } from "@/components/admin/PromotionsAdmin";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -112,6 +114,10 @@ const AdminPanel = () => {
               <ArrowRightLeft className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">Миграция</span>
             </TabsTrigger>
+            <TabsTrigger value="promotions" className="gap-1.5 px-2 py-1.5 text-xs sm:px-3 sm:text-sm">
+              <Megaphone className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Акции / Баннеры</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* Knowledge Base Tab */}
@@ -165,6 +171,11 @@ const AdminPanel = () => {
           <TabsContent value="migration" className="space-y-6">
             <DataSyncToLive />
             <DataMigration />
+          </TabsContent>
+
+          {/* Promotions Tab */}
+          <TabsContent value="promotions">
+            <PromotionsAdmin />
           </TabsContent>
         </Tabs>
 

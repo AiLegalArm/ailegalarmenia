@@ -43,8 +43,8 @@ describe('CasePdfUpload', () => {
   };
 
   it('should render the dialog when open', () => {
-    const { container } = render(<CasePdfUpload {...mockProps} />);
-    expect(container.textContent).toContain('cases:attach_pdf_to_case');
+    render(<CasePdfUpload {...mockProps} />);
+    expect(document.body.textContent).toContain('cases:attach_pdf_to_case');
   });
 
   it('should render file input', () => {
@@ -60,7 +60,7 @@ describe('CasePdfUpload', () => {
   });
 
   it('should not render when closed', () => {
-    const { container } = render(<CasePdfUpload {...mockProps} open={false} />);
-    expect(container.textContent).not.toContain('cases:attach_pdf_to_case');
+    render(<CasePdfUpload {...mockProps} open={false} />);
+    expect(document.body.textContent).not.toContain('cases:attach_pdf_to_case');
   });
 });
