@@ -12,10 +12,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { 
-  Users2, 
-  Briefcase, 
-  Clock, 
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  Users2,
+  Briefcase,
+  Clock,
   CheckCircle2,
   AlertCircle,
   TrendingUp,
@@ -64,6 +69,71 @@ interface TeamStats {
   memberStats: TeamMemberStats[];
 }
 
+const AddLawyerToTeam = ({ onAdd }: { onAdd: () => void }) => {
+  const [username, setUsername] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const { toast } = useToast();
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim()) return;
+
+    setLoading(true);
+    try {
+      // @ts-ignore - new RPC function not yet in database types
+      const { data, error } = await supabase.rpc('add_lawyer_by_username', {
+        p_username: username.trim()
+      });
+
+      if (error) throw error;
+
+      const res = data as any;
+      if (!res.success) {
+        throw new Error(res.error || 'Ошибка при добавлении փաստաբան');
+      }
+
+      toast({
+        title: 'Успех!',
+        description: `Адвокат ${username} добавлен в вашу команду.`,
+      });
+      setUsername('');
+      onAdd();
+    } catch (err: any) {
+      toast({
+        title: 'Ошибка',
+        description: err.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="mb-6">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Ավելացնել նոր փաստաբան թիմում</CardTitle>
+        <CardDescription>Մուտքագրեք փաստաբանի username-ը՝ ձեր թիմում ավելացնելու համար:</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleAdd} className="flex gap-3">
+          <Input
+            placeholder="Օրինակ՝ ArmenLawyer"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            disabled={loading}
+            className="max-w-xs"
+          />
+          <Button type="submit" disabled={loading || !username.trim()}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Ավելացնել
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+};
+
 const STATUS_COLORS: Record<string, string> = {
   open: '#22c55e',
   in_progress: '#3b82f6',
@@ -82,129 +152,106 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function TeamStats() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['team-stats', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
 
-      // Get teams where user is leader
-      const { data: teams, error: teamsError } = await supabase
-        .from('teams')
-        .select('id, name')
-        .eq('leader_id', user.id);
+      // Get all lawyers directly assigned to this auditor
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, username')
+        .eq('auditor_id', user.id);
 
-      if (teamsError) throw teamsError;
-      if (!teams || teams.length === 0) return null;
+      if (profilesError) throw profilesError;
 
-      const allStats: TeamStats[] = [];
+      const memberIds = profiles?.map(p => p.id) || [];
 
-      for (const team of teams) {
-        // Get team members
-        const { data: members, error: membersError } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', team.id);
-
-        if (membersError) throw membersError;
-
-        const memberIds = members?.map(m => m.user_id) || [];
-
-        if (memberIds.length === 0) {
-          allStats.push({
-            teamId: team.id,
-            teamName: team.name,
-            totalMembers: 0,
-            totalCases: 0,
-            openCases: 0,
-            closedCases: 0,
-            inProgressCases: 0,
-            pendingCases: 0,
-            memberStats: [],
-          });
-          continue;
-        }
-
-        // Get profiles
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, email, full_name')
-          .in('id', memberIds);
-
-        if (profilesError) throw profilesError;
-
-        // Get cases for all members
-        const { data: cases, error: casesError } = await supabase
-          .from('cases')
-          .select('id, lawyer_id, status, created_at, updated_at')
-          .in('lawyer_id', memberIds)
-          .is('deleted_at', null);
-
-        if (casesError) throw casesError;
-
-        // Get case files count
-        const caseIds = cases?.map(c => c.id) || [];
-        let filesData: { case_id: string }[] = [];
-        if (caseIds.length > 0) {
-          const { data: files, error: filesError } = await supabase
-            .from('case_files')
-            .select('case_id')
-            .in('case_id', caseIds)
-            .is('deleted_at', null);
-          if (!filesError) filesData = files || [];
-        }
-
-        // Get comments count
-        let commentsData: { case_id: string; author_id: string }[] = [];
-        if (caseIds.length > 0) {
-          const { data: comments, error: commentsError } = await supabase
-            .from('case_comments')
-            .select('case_id, author_id')
-            .in('case_id', caseIds);
-          if (!commentsError) commentsData = comments || [];
-        }
-
-        // Calculate stats per member
-        const memberStats: TeamMemberStats[] = (profiles || []).map(profile => {
-          const memberCases = (cases || []).filter(c => c.lawyer_id === profile.id);
-          const memberCaseIds = memberCases.map(c => c.id);
-          const memberFiles = filesData.filter(f => memberCaseIds.includes(f.case_id));
-          const memberComments = commentsData.filter(c => memberCaseIds.includes(c.case_id));
-          
-          const lastCase = memberCases
-            .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
-
-          return {
-            userId: profile.id,
-            email: profile.email,
-            fullName: profile.full_name,
-            totalCases: memberCases.length,
-            openCases: memberCases.filter(c => c.status === 'open').length,
-            closedCases: memberCases.filter(c => c.status === 'closed').length,
-            inProgressCases: memberCases.filter(c => c.status === 'in_progress').length,
-            pendingCases: memberCases.filter(c => c.status === 'pending').length,
-            filesCount: memberFiles.length,
-            commentsCount: memberComments.length,
-            lastActivity: lastCase?.updated_at || null,
-          };
-        });
-
-        // Calculate team totals
-        const teamCases = cases || [];
-        allStats.push({
-          teamId: team.id,
-          teamName: team.name,
-          totalMembers: memberIds.length,
-          totalCases: teamCases.length,
-          openCases: teamCases.filter(c => c.status === 'open').length,
-          closedCases: teamCases.filter(c => c.status === 'closed').length,
-          inProgressCases: teamCases.filter(c => c.status === 'in_progress').length,
-          pendingCases: teamCases.filter(c => c.status === 'pending').length,
-          memberStats: memberStats.sort((a, b) => b.totalCases - a.totalCases),
-        });
+      if (memberIds.length === 0) {
+        return [{
+          teamId: 'my-team',
+          teamName: 'Իմ Թիմը (Моя Команда)',
+          totalMembers: 0,
+          totalCases: 0,
+          openCases: 0,
+          closedCases: 0,
+          inProgressCases: 0,
+          pendingCases: 0,
+          memberStats: [],
+        }];
       }
 
-      return allStats;
+      // Get cases for all members
+      const { data: cases, error: casesError } = await supabase
+        .from('cases')
+        .select('id, lawyer_id, status, created_at, updated_at')
+        .in('lawyer_id', memberIds)
+        .is('deleted_at', null);
+
+      if (casesError) throw casesError;
+
+      // Get case files count
+      const caseIds = cases?.map(c => c.id) || [];
+      let filesData: { case_id: string }[] = [];
+      if (caseIds.length > 0) {
+        const { data: files, error: filesError } = await supabase
+          .from('case_files')
+          .select('case_id')
+          .in('case_id', caseIds)
+          .is('deleted_at', null);
+        if (!filesError) filesData = files || [];
+      }
+
+      // Get comments count
+      let commentsData: { case_id: string; author_id: string }[] = [];
+      if (caseIds.length > 0) {
+        const { data: comments, error: commentsError } = await supabase
+          .from('case_comments')
+          .select('case_id, author_id')
+          .in('case_id', caseIds);
+        if (!commentsError) commentsData = comments || [];
+      }
+
+      // Calculate stats per member
+      const memberStats: TeamMemberStats[] = (profiles || []).map(profile => {
+        const memberCases = (cases || []).filter(c => c.lawyer_id === profile.id);
+        const memberCaseIds = memberCases.map(c => c.id);
+        const memberFiles = filesData.filter(f => memberCaseIds.includes(f.case_id));
+        const memberComments = commentsData.filter(c => memberCaseIds.includes(c.case_id));
+
+        const lastCase = memberCases
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
+
+        return {
+          userId: profile.id,
+          email: profile.email,
+          fullName: profile.full_name,
+          totalCases: memberCases.length,
+          openCases: memberCases.filter(c => c.status === 'open').length,
+          closedCases: memberCases.filter(c => c.status === 'closed').length,
+          inProgressCases: memberCases.filter(c => c.status === 'in_progress').length,
+          pendingCases: memberCases.filter(c => c.status === 'pending').length,
+          filesCount: memberFiles.length,
+          commentsCount: memberComments.length,
+          lastActivity: lastCase?.updated_at || null,
+        };
+      });
+
+      // Calculate team totals
+      const teamCases = cases || [];
+      return [{
+        teamId: 'my-team',
+        teamName: 'Իմ Թիմը (Моя Команда)',
+        totalMembers: memberIds.length,
+        totalCases: teamCases.length,
+        openCases: teamCases.filter(c => c.status === 'open').length,
+        closedCases: teamCases.filter(c => c.status === 'closed').length,
+        inProgressCases: teamCases.filter(c => c.status === 'in_progress').length,
+        pendingCases: teamCases.filter(c => c.status === 'pending').length,
+        memberStats: memberStats.sort((a, b) => b.totalCases - a.totalCases),
+      }];
     },
     enabled: !!user?.id,
   });
@@ -232,6 +279,7 @@ export function TeamStats() {
 
   return (
     <div className="space-y-8">
+      <AddLawyerToTeam onAdd={() => queryClient.invalidateQueries({ queryKey: ['team-stats'] })} />
       {stats.map((team) => (
         <div key={team.teamId} className="space-y-6">
           {/* Team Header */}
@@ -252,7 +300,7 @@ export function TeamStats() {
                 <div className="text-2xl font-bold">{team.totalCases}</div>
               </CardContent>
             </Card>
-            
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium">Ընթացքի մեջ</CardTitle>
@@ -260,8 +308,8 @@ export function TeamStats() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-blue-600">{team.inProgressCases}</div>
-                <Progress 
-                  value={team.totalCases > 0 ? (team.inProgressCases / team.totalCases) * 100 : 0} 
+                <Progress
+                  value={team.totalCases > 0 ? (team.inProgressCases / team.totalCases) * 100 : 0}
                   className="mt-2 h-1"
                 />
               </CardContent>
@@ -274,8 +322,8 @@ export function TeamStats() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-yellow-600">{team.pendingCases}</div>
-                <Progress 
-                  value={team.totalCases > 0 ? (team.pendingCases / team.totalCases) * 100 : 0} 
+                <Progress
+                  value={team.totalCases > 0 ? (team.pendingCases / team.totalCases) * 100 : 0}
                   className="mt-2 h-1 [&>div]:bg-yellow-500"
                 />
               </CardContent>
@@ -288,8 +336,8 @@ export function TeamStats() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">{team.closedCases}</div>
-                <Progress 
-                  value={team.totalCases > 0 ? (team.closedCases / team.totalCases) * 100 : 0} 
+                <Progress
+                  value={team.totalCases > 0 ? (team.closedCases / team.totalCases) * 100 : 0}
                   className="mt-2 h-1 [&>div]:bg-green-500"
                 />
               </CardContent>
@@ -347,7 +395,7 @@ export function TeamStats() {
                 <CardContent>
                   <div className="h-[200px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart 
+                      <BarChart
                         data={team.memberStats.slice(0, 5).map(m => ({
                           name: m.fullName?.split(' ')[0] || m.email.split('@')[0],
                           cases: m.totalCases,
@@ -436,7 +484,7 @@ export function TeamStats() {
                             {member.commentsCount}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {member.lastActivity 
+                            {member.lastActivity
                               ? format(new Date(member.lastActivity), 'dd MMM yyyy', { locale: ru })
                               : '—'
                             }

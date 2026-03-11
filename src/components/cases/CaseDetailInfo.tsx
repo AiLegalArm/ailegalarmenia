@@ -12,6 +12,7 @@ interface CaseDetailInfoProps {
   createdAt: string;
   updatedAt: string;
   isAdmin: boolean;
+  isAuditor: boolean;
 }
 
 export function CaseDetailInfo({
@@ -20,7 +21,8 @@ export function CaseDetailInfo({
   courtDate,
   createdAt,
   updatedAt,
-  isAdmin
+  isAdmin,
+  isAuditor
 }: CaseDetailInfoProps) {
   const { t } = useTranslation(['cases', 'common']);
 
@@ -71,8 +73,8 @@ export function CaseDetailInfo({
         </CardContent>
       </Card>
 
-      {/* Team Leader Comments - only visible to admins and team leaders */}
-      {isAdmin && <CaseComments caseId={caseId} />}
+      {/* Team Leader Comments - visible to admins and team leaders (auditors) */}
+      {(isAdmin || isAuditor) && <CaseComments caseId={caseId} />}
     </div>
   );
 }

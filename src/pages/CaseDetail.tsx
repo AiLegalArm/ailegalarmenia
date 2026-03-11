@@ -31,8 +31,8 @@ import { exportCaseDetailToPDF } from '@/lib/pdfExport';
 import { exportFullCaseReportToPDF } from '@/lib/pdfExportFullReport';
 import type { FullCaseReportData } from '@/lib/pdfExportFullReport';
 import { format } from 'date-fns';
-import { 
-  Edit, 
+import {
+  Edit,
   Trash2,
   Loader2,
   Brain,
@@ -73,10 +73,10 @@ const CaseDetail = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(['cases', 'common', 'ai', 'disclaimer', 'reminders']);
   const { user, signOut, isClient, isAdmin, isLawyer, isAuditor } = useAuth();
-  
+
   const { data: caseData, isLoading } = useCase(id);
   const { updateCase, deleteCase } = useCases();
-  
+
   const [editFormOpen, setEditFormOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [pdfUploadOpen, setPdfUploadOpen] = useState(false);
@@ -84,7 +84,7 @@ const CaseDetail = () => {
   const [complaintGeneratorOpen, setComplaintGeneratorOpen] = useState(false);
   const [preselectedDocumentType, setPreselectedDocumentType] = useState<'appeal' | 'cassation' | null>(null);
   const [aiCreditsExhausted, setAiCreditsExhausted] = useState(false);
-  
+
   const { toast } = useToast();
 
   const handleUpdate = (data: Database['public']['Tables']['cases']['Update']) => {
@@ -106,28 +106,28 @@ const CaseDetail = () => {
 
   const handleExportCaseDetails = async () => {
     if (!caseData) return;
-    
+
     const { data: files } = await supabase
       .from('case_files')
       .select('id, original_filename, created_at, file_size')
       .eq('case_id', caseData.id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
-    
+
     const { data: analyses } = await supabase
       .from('ai_analysis')
       .select('id, role, created_at')
       .eq('case_id', caseData.id)
       .order('created_at', { ascending: false });
-    
+
     const timeline: Array<{ type: string; title: string; description?: string; timestamp: string }> = [];
-    
+
     timeline.push({
       type: 'created',
       title: '\u0533\u0578\u0580\u056E\u0568 \u057D\u057F\u0565\u0572\u056E\u057E\u0565\u056C \u0567',
       timestamp: caseData.created_at,
     });
-    
+
     files?.forEach(file => {
       timeline.push({
         type: 'file',
@@ -136,14 +136,14 @@ const CaseDetail = () => {
         timestamp: file.created_at,
       });
     });
-    
+
     const roleLabels: Record<string, string> = {
       advocate: '\u0553\u0561\u057D\u057F\u0561\u0562\u0561\u0576 (\u054A\u0561\u0577\u057F\u057A\u0561\u0576)',
       prosecutor: '\u0544\u0565\u0572\u0561\u0564\u0580\u0578\u0572',
       judge: '\u0534\u0561\u057F\u0561\u057E\u0578\u0580',
       aggregator: '\u053C\u056B\u0561\u056F\u0561\u057F\u0561\u0580 \u057E\u0565\u0580\u056C\u0578\u0582\u056E\u0578\u0582\u0569\u0575\u0578\u0582\u0576',
     };
-    
+
     analyses?.forEach(analysis => {
       timeline.push({
         type: 'analysis',
@@ -152,9 +152,9 @@ const CaseDetail = () => {
         timestamp: analysis.created_at,
       });
     });
-    
+
     timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
+
     await exportCaseDetailToPDF({
       caseNumber: caseData.case_number,
       caseTitle: caseData.title,
@@ -181,10 +181,10 @@ const CaseDetail = () => {
 
   const handleExportFullReport = async () => {
     if (!caseData) return;
-    
+
     try {
       toast({ title: t('common:loading', 'Loading...'), description: t('cases:generating_report', 'Generating full report...') });
-      
+
       // Fetch all data in parallel
       const [filesRes, analysesRes, agentRunsRes, findingsRes, evidenceRes, reportRes] = await Promise.all([
         supabase.from('case_files').select('original_filename, file_size, created_at').eq('case_id', caseData.id).is('deleted_at', null).order('created_at', { ascending: false }),
@@ -239,7 +239,7 @@ const CaseDetail = () => {
           generated_at: aggReport.generated_at,
         } : undefined,
       });
-      
+
       toast({ title: t('common:success', 'Success'), description: t('common:pdf_exported', 'PDF exported') });
     } catch (error) {
       console.error('Full report export error:', error);
@@ -294,7 +294,7 @@ const CaseDetail = () => {
                 </Badge>
               </div>
             </div>
-            
+
             {/* Action Buttons - Touch-friendly */}
             {canEdit && (
               <div className="grid grid-cols-2 gap-3 pt-2">
@@ -322,7 +322,7 @@ const CaseDetail = () => {
                 </Button>
               </div>
             )}
-            
+
             {/* Full Report Export Button */}
             <div className="pt-2">
               <Button
@@ -359,33 +359,33 @@ const CaseDetail = () => {
               {/* Tab Navigation - Horizontal scroll on mobile */}
               <div className="overflow-x-auto scrollbar-thin pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
                 <TabsList className="inline-flex min-w-max gap-1 rounded-xl bg-muted/50 p-1.5">
-                  <TabsTrigger 
-                    value="details" 
+                  <TabsTrigger
+                    value="details"
                     className="min-h-[44px] px-3 sm:px-4 rounded-lg text-mobile-sm sm:text-sm font-medium data-[state=active]:shadow-soft whitespace-nowrap"
                   >
                     {t('common:details', 'Details')}
                   </TabsTrigger>
-                  <TabsTrigger 
+                  <TabsTrigger
                     value="files"
                     className="min-h-[44px] px-3 sm:px-4 rounded-lg text-mobile-sm sm:text-sm font-medium data-[state=active]:shadow-soft whitespace-nowrap"
                   >
                     {t('files')}
                   </TabsTrigger>
-                  <TabsTrigger 
+                  <TabsTrigger
                     value="reminders"
                     className="min-h-[44px] px-3 sm:px-4 rounded-lg text-mobile-sm sm:text-sm font-medium data-[state=active]:shadow-soft whitespace-nowrap"
                   >
                     <Bell className="h-4 w-4 mr-1 sm:mr-2 shrink-0" />
                     <span>{t('reminders:reminders')}</span>
                   </TabsTrigger>
-                  <TabsTrigger 
+                  <TabsTrigger
                     value="analysis"
                     className="min-h-[44px] px-3 sm:px-4 rounded-lg text-mobile-sm sm:text-sm font-medium data-[state=active]:shadow-soft whitespace-nowrap"
                   >
                     <Brain className="h-4 w-4 mr-1 sm:mr-2 shrink-0" />
                     <span>{t('ai:analyze')}</span>
                   </TabsTrigger>
-                  <TabsTrigger 
+                  <TabsTrigger
                     value="agents"
                     className="min-h-[44px] px-3 sm:px-4 rounded-lg text-mobile-sm sm:text-sm font-medium data-[state=active]:shadow-soft whitespace-nowrap"
                   >
@@ -425,16 +425,16 @@ const CaseDetail = () => {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <CardTitle className="text-mobile-lg sm:text-lg">{t('files')}</CardTitle>
                       <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           onClick={() => setPdfUploadOpen(true)}
                           className="h-11 rounded-xl text-mobile-sm sm:text-sm shadow-soft active:scale-[0.98] transition-transform"
                         >
                           <FilePlus className="mr-2 h-4 w-4" />
                           <span className="truncate">{t('pdf_ocr')}</span>
                         </Button>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           onClick={() => navigate(`/cases/${caseData.id}/transcriptions`)}
                           className="h-11 rounded-xl text-mobile-sm sm:text-sm shadow-soft active:scale-[0.98] transition-transform"
                         >
@@ -468,8 +468,8 @@ const CaseDetail = () => {
               </TabsContent>
 
               <TabsContent value="agents" className="mt-4">
-                <MultiAgentPanel 
-                  caseId={caseData.id} 
+                <MultiAgentPanel
+                  caseId={caseData.id}
                   caseFacts={caseData.facts || undefined}
                   caseType={caseData.case_type || undefined}
                   partyRole={caseData.party_role || undefined}
@@ -487,6 +487,7 @@ const CaseDetail = () => {
             createdAt={caseData.created_at}
             updatedAt={caseData.updated_at}
             isAdmin={isAdmin}
+            isAuditor={isAuditor}
           />
         </div>
 

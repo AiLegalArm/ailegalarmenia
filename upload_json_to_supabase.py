@@ -69,29 +69,58 @@ def upload_json_files():
             total_errors += 1
             continue
             
+    # Загружаем кеш существующих документов для быстрой проверки дубликатов
+    print("⏳ Получаем список существующих документов из базы для быстрого пропуска дубликатов...")
+    existing_source_names = set()
+    offset = 0
+    limit = 1000
+    while True:
+        try:
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/knowledge_base?select=source_name&offset={offset}&limit={limit}",
+                headers=HEADERS
+            )
+            if res.status_code == 200:
+                rows = res.json()
+                if not rows:
+                    break
+                for row in rows:
+                    existing_source_names.add(row["source_name"])
+                if len(rows) < limit:
+                    break
+                offset += limit
+            else:
+                print(f"⚠️ Ошибка получения списка документов: {res.text}")
+                break
+        except Exception as e:
+            print(f"⚠️ Ошибка соединения: {e}")
+            break
+    print(f"✅ В базе найдено {len(existing_source_names)} существующих документов.")
+
+    for idx, filename in enumerate(json_files, 1):
+        file_path = os.path.join(JSON_DIR, filename)
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"[{idx}/{len(json_files)}] ❌ Ошибка чтения '{filename}': {e}")
+            total_errors += 1
+            continue
+
+        if not isinstance(data, dict) or "chunks" not in data:
+            continue
+            
         doc_title = data.get("title", filename.replace(".json", ""))
         source_name = data.get("source_file", filename)
         
         print(f"\n[{idx}/{len(json_files)}] Обработка: '{doc_title}'")
         
-        # --- ЗАЩИТА ОТ ДУБЛИКАТОВ ---
-        # Проверяем, есть ли уже файл с таким source_name в базе
-        encoded_source = urllib.parse.quote(source_name)
-        try:
-            check_res = requests.get(
-                f"{SUPABASE_URL}/rest/v1/knowledge_base?source_name=eq.{encoded_source}&select=id",
-                headers={**HEADERS, "Prefer": "return=minimal"}
-            )
-            if check_res.status_code == 200:
-                existing_docs = check_res.json()
-                if existing_docs and len(existing_docs) > 0:
-                    print(f"    ⏭️ Документ уже существует в базе (ID: {existing_docs[0]['id']}). Пропускаем.")
-                    total_skipped += 1
-                    continue
-            elif check_res.status_code >= 400:
-                print(f"    ⚠️ ПРЕДУПРЕЖДЕНИЕ: Не удалось проверить дубликаты ({check_res.status_code}).")
-        except Exception as e:
-            print(f"    ⚠️ Ошибка соединения при проверке дубликатов: {e}")
+        # --- БЫСТРАЯ ЗАЩИТА ОТ ДУБЛИКАТОВ (О(1) проверка в памяти) ---
+        if source_name in existing_source_names:
+            print(f"    ⏭️ Документ уже существует в базе. Пропускаем.")
+            total_skipped += 1
+            continue
         # ----------------------------
 
         # ШАГ 1: Создаем Главный Документ в `knowledge_base`
