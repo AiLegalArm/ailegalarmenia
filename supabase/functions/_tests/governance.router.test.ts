@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Governance tests for openai-router.ts.
  * P1: Validates model allowlists, temperature caps, max_tokens caps.
