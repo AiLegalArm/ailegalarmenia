@@ -26,108 +26,102 @@ html {
     --spacing-lg: 24px;
     --spacing-xl: 32px;
     
-    /* Premium shadows for depth */
-    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.06), 0 4px 16px -4px hsl(0 0% 0% / 0.08);
-    --shadow-medium: 0 4px 12px -4px hsl(0 0% 0% / 0.1), 0 8px 24px -8px hsl(0 0% 0% / 0.14);
-    --shadow-elevated: 0 8px 24px -8px hsl(0 0% 0% / 0.14), 0 16px 48px -16px hsl(0 0% 0% / 0.18);
+    /* Subtle shadows without strong blur */
+    --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.02);
+    --shadow-medium: 0 4px 6px -1px rgba(0,0,0,0.03), 0 2px 4px -1px rgba(0,0,0,0.02);
+    --shadow-elevated: 0 10px 15px -3px rgba(0,0,0,0.04), 0 4px 6px -2px rgba(0,0,0,0.02);
 
-    /* Gradient tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(230 80% 56%), hsl(260 85% 62%));
-    --gradient-hero: linear-gradient(160deg, hsl(230 25% 97%), hsl(250 40% 96%), hsl(230 30% 98%));
-    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.7), hsl(0 0% 100% / 0.4));
+    /* Backgrounds */
+    --background: 210 20% 97%; /* #F6F8FA */
+    --foreground: 215 26% 9%; /* #11161D */
 
-    --background: 230 25% 98%;
-    --foreground: 230 25% 10%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 230 25% 10%;
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 215 26% 9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 230 25% 10%;
+    --popover-foreground: 215 26% 9%;
 
-    --primary: 230 80% 56%;
+    --primary: 224 64% 33%; /* #1E3A8A */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 250 30% 95%;
-    --secondary-foreground: 230 25% 15%;
+    --secondary: 215 25% 95%; /* Light gray */
+    --secondary-foreground: 215 26% 9%;
 
-    --muted: 230 20% 95%;
-    --muted-foreground: 230 10% 46%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 211 14% 45%;
 
-    --accent: 250 40% 94%;
-    --accent-foreground: 230 30% 15%;
+    --accent: 41 45% 52%; /* #B9974F */
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 63% 31%; /* #7F1D1D */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 230 20% 90%;
-    --input: 230 20% 90%;
-    --ring: 230 80% 56%;
+    --border: 210 10% 90%;
+    --input: 210 10% 90%;
+    --ring: 224 64% 33%;
 
-    --warning: 38 92% 50%;
+    --warning: 41 45% 52%;
     --warning-foreground: 0 0% 100%;
 
-    --radius: 0.75rem;
+    --radius: 0.625rem; /* 10px */
 
-    --sidebar-background: 230 25% 98%;
-    --sidebar-foreground: 230 15% 30%;
-    --sidebar-primary: 230 80% 56%;
+    --sidebar-background: 210 20% 98%;
+    --sidebar-foreground: 215 26% 9%;
+    --sidebar-primary: 224 64% 33%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 250 30% 95%;
-    --sidebar-accent-foreground: 230 25% 15%;
-    --sidebar-border: 230 20% 90%;
-    --sidebar-ring: 230 80% 56%;
+    --sidebar-accent: 215 25% 95%;
+    --sidebar-accent-foreground: 215 26% 9%;
+    --sidebar-border: 210 10% 90%;
+    --sidebar-ring: 224 64% 33%;
   }
 
   /* Dark mode */
   .dark {
-    --shadow-soft: 0 2px 8px -2px hsl(0 0% 0% / 0.3), 0 4px 16px -4px hsl(0 0% 0% / 0.4);
-    --shadow-medium: 0 4px 12px -4px hsl(0 0% 0% / 0.4), 0 8px 24px -8px hsl(0 0% 0% / 0.5);
-    --shadow-elevated: 0 8px 24px -8px hsl(0 0% 0% / 0.5), 0 16px 48px -16px hsl(0 0% 0% / 0.6);
+    /* Subtle, barely visible shadows for dark mode */
+    --shadow-soft: 0 2px 8px -2px rgba(0,0,0,0.1);
+    --shadow-medium: 0 4px 12px -4px rgba(0,0,0,0.15);
+    --shadow-elevated: 0 8px 24px -8px rgba(0,0,0,0.2);
 
-    --gradient-primary: linear-gradient(135deg, hsl(230 80% 62%), hsl(260 80% 68%));
-    --gradient-hero: linear-gradient(160deg, hsl(230 20% 8%), hsl(250 25% 10%), hsl(230 15% 7%));
-    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.06), hsl(0 0% 100% / 0.02));
+    /* Backgrounds */
+    --background: 213 29% 6%; /* #0B0F14 */
+    --foreground: 210 40% 93%; /* #E6EDF3 */
 
-    --background: 230 20% 7%;
-    --foreground: 230 15% 92%;
+    --card: 214 25% 11%; /* #151B23 */
+    --card-foreground: 210 40% 93%;
 
-    --card: 230 18% 10%;
-    --card-foreground: 230 15% 92%;
+    --popover: 215 26% 9%; /* #11161D */
+    --popover-foreground: 210 40% 93%;
 
-    --popover: 230 18% 10%;
-    --popover-foreground: 230 15% 92%;
+    --primary: 224 64% 33%; /* #1E3A8A */
+    --primary-foreground: 0 0% 100%;
 
-    --primary: 230 80% 65%;
-    --primary-foreground: 230 25% 7%;
+    --secondary: 215 25% 14%; /* #1A212B */
+    --secondary-foreground: 210 40% 93%;
 
-    --secondary: 230 15% 16%;
-    --secondary-foreground: 230 15% 92%;
+    --muted: 215 25% 14%;
+    --muted-foreground: 211 14% 66%; /* #9BA7B4 */
 
-    --muted: 230 15% 16%;
-    --muted-foreground: 230 10% 55%;
+    --accent: 42 47% 57%; /* #C6A75E */
+    --accent-foreground: 213 29% 6%; /* Dark bg for contrast */
 
-    --accent: 250 20% 18%;
-    --accent-foreground: 230 15% 92%;
-
-    --destructive: 0 62% 40%;
+    --destructive: 0 63% 31%; /* #7F1D1D */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 230 15% 16%;
-    --input: 230 15% 16%;
-    --ring: 230 80% 65%;
+    --border: 217 13% 12%; /* flat version of rgba 255 255 255 / 0.06 */
+    --input: 217 13% 12%;
+    --ring: 224 64% 33%; /* #1E3A8A */
 
-    --warning: 38 92% 50%;
+    --warning: 42 47% 57%;
     --warning-foreground: 0 0% 100%;
 
-    --sidebar-background: 230 18% 8%;
-    --sidebar-foreground: 230 12% 80%;
-    --sidebar-primary: 230 80% 65%;
+    --sidebar-background: 213 29% 6%; /* #0B0F14 */
+    --sidebar-foreground: 210 40% 93%;
+    --sidebar-primary: 224 64% 33%; 
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 230 15% 14%;
-    --sidebar-accent-foreground: 230 12% 80%;
-    --sidebar-border: 230 15% 14%;
-    --sidebar-ring: 230 80% 65%;
+    --sidebar-accent: 215 26% 9%; /* #11161D */
+    --sidebar-accent-foreground: 210 40% 93%;
+    --sidebar-border: 217 13% 12%;
+    --sidebar-ring: 224 64% 33%;
   }
 }
 
@@ -138,6 +132,7 @@ html {
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Inter", "SF Pro", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     /* Prevent text inflation on mobile */
     text-size-adjust: 100%;
     -webkit-text-size-adjust: 100%;

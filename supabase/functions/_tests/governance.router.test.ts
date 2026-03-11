@@ -66,13 +66,17 @@ Deno.test("governance: all MODEL_MAP entries have max_tokens <= 16384", () => {
 
 // ─── Test 4: Only allowed model prefixes ────────────────────────────────────
 
-Deno.test("governance: all models use openai/ or google/ prefix", () => {
+Deno.test("governance: all models use allowed prefixes (openai/, google/, openrouter/, anthropic/)", () => {
   for (const [key, cfg] of Object.entries(MODEL_MAP)) {
-    const validPrefix = cfg.model.startsWith("openai/") || cfg.model.startsWith("google/");
+    const validPrefix = 
+      cfg.model.startsWith("openai/") || 
+      cfg.model.startsWith("google/") || 
+      cfg.model.startsWith("openrouter/") || 
+      cfg.model.startsWith("anthropic/");
     assertEquals(
       validPrefix,
       true,
-      `${key}: model "${cfg.model}" has invalid prefix (must be openai/ or google/)`
+      `${key}: model "${cfg.model}" has invalid prefix (must be openai/, google/, openrouter/, or anthropic/)`
     );
   }
 });
