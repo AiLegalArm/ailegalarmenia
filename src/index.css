@@ -212,10 +212,18 @@ html {
   }
 }
 
-/* TipTap Editor Styles */
+/* TipTap Editor Styles & Document Rendering */
 .ProseMirror {
   outline: none;
   min-height: 400px;
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+  line-height: 1.75;
+}
+
+.ProseMirror a {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: hsl(var(--primary));
+  text-decoration: underline;
 }
 
 .ProseMirror p {

@@ -46,6 +46,9 @@ export default {
         "mobile-xl": ["1.25rem", { lineHeight: "1.75rem" }],
         "mobile-2xl": ["1.5rem", { lineHeight: "2rem" }],
       },
+      fontFamily: {
+        sans: ["Inter", "SF Pro", "IBM Plex Sans", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
