@@ -83,12 +83,45 @@ async function uploadJsonl() {
   const fileStream = fs.createReadStream(FILE_PATH);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-  const batchSize = 50;
+  const batchSize = 5; // Снижаем до 5 дел за раз — медленно, но надежно
   let currentBatch: any[] = [];
   let totalProcessed = 0;
   let totalInserted = 0;
   let totalSkipped = 0;
   let totalErrors = 0;
+
+  async function upsertWithRetry(batch: any[], retries = 7, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const { error } = await supabase.from('legal_practice_kb').upsert(batch, { onConflict: 'echr_case_id' });
+        
+        if (!error) {
+          // После каждого успеха спим 1 сек, чтобы дать базе "выдохнуть"
+          await new Promise(res => setTimeout(res, 1000));
+          return true;
+        }
+        
+        // Логируем саму ошибку для диагностики
+        process.stdout.write(`\n⚠️ Ошибка Supabase: ${error.message} (попытка ${i+1}/${retries})`);
+        
+        if (i < retries - 1) {
+          process.stdout.write(`, ждем ${delay}мс...`);
+          await new Promise(res => setTimeout(res, delay));
+          delay *= 1.5; 
+          continue;
+        }
+        return false;
+      } catch (e: any) {
+        if (i < retries - 1) {
+          await new Promise(res => setTimeout(res, delay));
+          delay *= 1.5;
+          continue;
+        }
+        return false;
+      }
+    }
+    return false;
+  }
 
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -158,9 +191,8 @@ async function uploadJsonl() {
     if (stableId) existingIds.add(String(stableId));
 
     if (currentBatch.length >= batchSize) {
-      const { error } = await supabase.from('legal_practice_kb').upsert(currentBatch, { onConflict: 'echr_case_id' });
-      if (error) {
-        console.error(`\n❌ Ошибка батча:`, error.message);
+      const success = await upsertWithRetry(currentBatch);
+      if (!success) {
         totalErrors += currentBatch.length;
       } else {
         totalInserted += currentBatch.length;
@@ -172,8 +204,8 @@ async function uploadJsonl() {
 
   // Последний батч
   if (currentBatch.length > 0) {
-    const { error } = await supabase.from('legal_practice_kb').upsert(currentBatch, { onConflict: 'echr_case_id' });
-    if (error) {
+    const success = await upsertWithRetry(currentBatch);
+    if (!success) {
       totalErrors += currentBatch.length;
     } else {
       totalInserted += currentBatch.length;
