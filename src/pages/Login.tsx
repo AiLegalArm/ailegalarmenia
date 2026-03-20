@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
+import { getLoginEmailCandidates } from '@/lib/auth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { motion } from 'framer-motion';
 
@@ -45,32 +46,28 @@ const Login = () => {
     defaultValues: { username: '', password: '' },
   });
 
-  const normalizeUsername = useMemo(
-    () => (raw: string) => raw.trim().replace(/^@+/, '').toLowerCase(),
-    []
-  );
-
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
     try {
-      const rawUsername = values.username.trim().replace(/^@+/, '');
-      const username = normalizeUsername(values.username);
-      const internalEmail = `${username}@app.internal`;
-      const legacyInternalEmail = `${rawUsername}@app.internal`;
-      
-      const { error } = await supabase.auth.signInWithPassword({
-        email: internalEmail,
-        password: values.password,
-      });
+      const emailCandidates = getLoginEmailCandidates(values.username);
+      let lastError: Error | null = null;
 
-      if (error && legacyInternalEmail !== internalEmail) {
-        const { error: legacyError } = await supabase.auth.signInWithPassword({
-          email: legacyInternalEmail,
+      for (const email of emailCandidates) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
           password: values.password,
         });
-        if (legacyError) throw legacyError;
-      } else if (error) {
-        throw error;
+
+        if (!error) {
+          lastError = null;
+          break;
+        }
+
+        lastError = error;
+      }
+
+      if (lastError) {
+        throw lastError;
       }
       
       if (!rememberMe) {

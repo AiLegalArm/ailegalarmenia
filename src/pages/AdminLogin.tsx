@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
+import { getLoginEmailCandidates } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,14 +30,17 @@ type LoginValues = z.infer<typeof loginSchema>;
 const AdminLogin = () => {
   const { t } = useTranslation(['auth', 'common', 'errors']);
   const navigate = useNavigate();
-  const { signIn, isAdmin, user, loading: authLoading } = useAuth();
+  const { signIn, signOut, isAdmin, user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in as admin
   useEffect(() => {
-    if (!authLoading && user && isAdmin) {
-      navigate('/admin');
+    if (authLoading) {
+      return;
+    }
+
+    if (user && isAdmin) {
+      navigate('/admin', { replace: true });
     }
   }, [user, isAdmin, authLoading, navigate]);
 
@@ -47,13 +51,26 @@ const AdminLogin = () => {
 
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
+
     try {
-      // Convert username to internal email format
-      const username = values.username.trim().replace(/^@+/, '').toLowerCase();
-      const internalEmail = `${username}@app.internal`;
-      
-      await signIn(internalEmail, values.password);
-      // The useEffect will handle the redirect once isAdmin is determined
+      const emailCandidates = getLoginEmailCandidates(values.username);
+      let signedIn = false;
+      let lastError: Error | null = null;
+
+      for (const email of emailCandidates) {
+        try {
+          await signIn(email, values.password);
+          signedIn = true;
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error('Unknown error');
+        }
+      }
+
+      if (!signedIn) {
+        throw lastError ?? new Error(t('invalid_credentials', 'Invalid username or password'));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const isConnectionIssue = /load failed|failed to fetch|network|timeout|connection terminated/i.test(message);
@@ -62,14 +79,38 @@ const AdminLogin = () => {
         title: t('errors:login_failed', 'Login failed'),
         description: isConnectionIssue
           ? `${t('errors:connection_lost', 'Connection lost')}. ${t('errors:try_again', 'Try again')}`
-          : message,
+          : t('invalid_credentials', 'Invalid username or password'),
         variant: 'destructive',
       });
       setIsLoading(false);
     }
   };
 
-  // Show loading while checking auth
+  useEffect(() => {
+    if (authLoading || !user) {
+      return;
+    }
+
+    if (!isAdmin) {
+      const handleUnauthorizedAdminLogin = async () => {
+        try {
+          await signOut();
+        } catch (error) {
+          console.error('Failed to sign out non-admin user from admin flow', error);
+        } finally {
+          toast({
+            title: t('errors:access_denied', 'Access denied'),
+            description: t('errors:admin_access_required', 'Administrator access is required to use the admin panel.'),
+            variant: 'destructive',
+          });
+          setIsLoading(false);
+        }
+      };
+
+      void handleUnauthorizedAdminLogin();
+    }
+  }, [authLoading, isAdmin, signOut, t, toast, user]);
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -86,9 +127,7 @@ const AdminLogin = () => {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <CardTitle className="text-2xl">Ադմին պանել</CardTitle>
-          <CardDescription>
-            Միայն ադմինիստրատորների համար
-          </CardDescription>
+          <CardDescription>Միայն ադմինիստրատորների համար</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -100,12 +139,7 @@ const AdminLogin = () => {
                   <FormItem>
                     <FormLabel>{t('username')}</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="text" 
-                        autoComplete="username"
-                        placeholder="admin"
-                        {...field} 
-                      />
+                      <Input type="text" autoComplete="username" placeholder="admin" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -118,11 +152,11 @@ const AdminLogin = () => {
                   <FormItem>
                     <FormLabel>{t('password')}</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="password" 
+                      <Input
+                        type="password"
                         autoComplete="current-password"
                         placeholder="••••••••"
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -130,11 +164,7 @@ const AdminLogin = () => {
                 )}
               />
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading}
-              >
+              <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Մուտք
               </Button>

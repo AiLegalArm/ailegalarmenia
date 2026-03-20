@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +14,6 @@ import {
   AlertTriangle,
   BookOpenText,
   ArrowRightLeft,
-  Megaphone,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminKnowledgeBaseTab } from "@/components/admin/AdminKnowledgeBaseTab";
@@ -37,14 +35,7 @@ import { DataSyncToLive } from "@/components/admin/DataSyncToLive";
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { t } = useTranslation(['admin']);
-  const { user, signOut, isAdmin, loading: authLoading } = useAuth();
-
-  // Protect admin route
-  useEffect(() => {
-    if (!authLoading && (!user || !isAdmin)) {
-      navigate("/admin/login");
-    }
-  }, [user, isAdmin, authLoading, navigate]);
+  const { user, signOut, loading: authLoading } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -60,8 +51,8 @@ const AdminPanel = () => {
     );
   }
 
-  // Don't render if not admin
-  if (!user || !isAdmin) {
+  // ProtectedRoute handles non-admin redirects before render
+  if (!user) {
     return null;
   }
 

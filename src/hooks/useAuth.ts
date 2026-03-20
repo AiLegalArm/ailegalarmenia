@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
@@ -10,55 +10,74 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // Set up listener BEFORE getSession to avoid race conditions (Supabase best practice)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
+    let isMounted = true;
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    const applySession = (nextSession: Session | null) => {
+      if (!isMounted) return;
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      setAuthReady(true);
+    };
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      applySession(nextSession);
     });
 
-    return () => subscription.unsubscribe();
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: initialSession } }) => {
+        applySession(initialSession);
+      })
+      .catch((error) => {
+        console.error('Failed to restore session', error);
+        applySession(null);
+      });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Get user profile
-  const { data: profile } = useQuery({
+  const profileQuery = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
       if (!user) return null;
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
-      if (error) throw error;
-      return data as Profile;
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      return data as Profile | null;
     },
     enabled: !!user,
   });
 
-  // Get user roles
-  const { data: roles } = useQuery({
+  const rolesQuery = useQuery({
     queryKey: ['user-roles', user?.id],
     queryFn: async () => {
-      if (!user) return [];
-      const { data, error } = await supabase
-        .rpc('get_user_roles', { _user_id: user.id });
-      if (error) throw error;
-      return (data as AppRole[]) || [];
+      if (!user) return [] as AppRole[];
+
+      const { data, error } = await supabase.rpc('get_user_roles', { _user_id: user.id });
+      if (error) {
+        throw error;
+      }
+
+      return ((data as AppRole[] | null) ?? []) as AppRole[];
     },
     enabled: !!user,
+    staleTime: 60 * 1000,
   });
 
   const signIn = async (email: string, password: string) => {
@@ -66,6 +85,7 @@ export function useAuth() {
       email,
       password,
     });
+
     if (error) throw error;
     return data;
   };
@@ -80,6 +100,7 @@ export function useAuth() {
         },
       },
     });
+
     if (error) throw error;
     return data;
   };
@@ -89,29 +110,29 @@ export function useAuth() {
     if (error) throw error;
   };
 
-  const hasRole = (role: AppRole): boolean => {
-    return roles?.includes(role) ?? false;
-  };
-
-  const isAdmin = hasRole('admin');
-  const isClient = hasRole('client');
-  const isAuditor = hasRole('auditor');
-  const isLawyer = hasRole('lawyer');
+  const roles = rolesQuery.data ?? [];
+  const hasRole = (role: AppRole): boolean => roles.includes(role);
+  const roleLoading = !!user && rolesQuery.isPending;
+  const loading = !authReady || roleLoading;
 
   return {
     user,
     session,
-    profile,
-    roles: roles || [],
+    profile: profileQuery.data ?? null,
+    profileError: profileQuery.error ?? null,
+    roles,
+    rolesError: rolesQuery.error ?? null,
     loading,
+    authReady,
+    roleLoading,
     signIn,
     signUp,
     signOut,
     hasRole,
-    isAdmin,
-    isClient,
-    isAuditor,
-    isLawyer,
+    isAdmin: hasRole('admin'),
+    isClient: hasRole('client'),
+    isAuditor: hasRole('auditor'),
+    isLawyer: hasRole('lawyer'),
     isAuthenticated: !!user,
   };
 }
