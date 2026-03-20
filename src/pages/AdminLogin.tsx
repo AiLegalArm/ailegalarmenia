@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -20,8 +20,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Shield, Loader2 } from 'lucide-react';
 
 const loginSchema = z.object({
-  username: z.string().min(3).max(50),
-  password: z.string().min(6),
+  username: z.string().min(1, 'Username is required').max(50),
+  password: z.string().min(1, 'Password is required'),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -29,16 +29,47 @@ type LoginValues = z.infer<typeof loginSchema>;
 const AdminLogin = () => {
   const { t } = useTranslation(['auth', 'common', 'errors']);
   const navigate = useNavigate();
-  const { signIn, isAdmin, user, loading: authLoading } = useAuth();
+  const { signIn, isAdmin, user, loading: authLoading, isLoading: authIsLoading, checkAdmin } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [loginSuccess, setLoginSuccess] = useState(false);
+  const loginAttemptRef = useRef(0);
+  const hasRedirected = useRef(false);
 
-  // Redirect if already logged in as admin
+  const handleAdminRedirect = useCallback(async () => {
+    if (hasRedirected.current) return;
+    if (!user) return;
+    
+    loginAttemptRef.current += 1;
+    const attempt = loginAttemptRef.current;
+    
+    try {
+      const adminStatus = await checkAdmin();
+      if (attempt !== loginAttemptRef.current) return;
+      
+      if (adminStatus) {
+        hasRedirected.current = true;
+        navigate('/admin', { replace: true });
+      }
+    } catch (error) {
+      console.error('Admin check failed:', error);
+    }
+  }, [user, checkAdmin, navigate]);
+
   useEffect(() => {
-    if (!authLoading && user && isAdmin) {
-      navigate('/admin');
+    if (!authLoading && user && isAdmin && !hasRedirected.current) {
+      navigate('/admin', { replace: true });
     }
   }, [user, isAdmin, authLoading, navigate]);
+
+  useEffect(() => {
+    if (loginSuccess && user && !authIsLoading && !hasRedirected.current) {
+      const timer = setTimeout(() => {
+        handleAdminRedirect();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loginSuccess, user, authIsLoading, handleAdminRedirect]);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -47,13 +78,28 @@ const AdminLogin = () => {
 
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
+    setLoginSuccess(false);
+    hasRedirected.current = false;
+    loginAttemptRef.current += 1;
+    const currentAttempt = loginAttemptRef.current;
+
     try {
-      // Convert username to internal email format
       const username = values.username.trim().replace(/^@+/, '').toLowerCase();
       const internalEmail = `${username}@app.internal`;
       
-      await signIn(internalEmail, values.password);
-      // The useEffect will handle the redirect once isAdmin is determined
+      const result = await signIn(internalEmail, values.password);
+      
+      if (result.user && currentAttempt === loginAttemptRef.current) {
+        setLoginSuccess(true);
+        
+        setTimeout(async () => {
+          const adminStatus = await checkAdmin();
+          if (adminStatus && currentAttempt === loginAttemptRef.current && !hasRedirected.current) {
+            hasRedirected.current = true;
+            navigate('/admin', { replace: true });
+          }
+        }, 100);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       const isConnectionIssue = /load failed|failed to fetch|network|timeout|connection terminated/i.test(message);
@@ -65,11 +111,11 @@ const AdminLogin = () => {
           : message,
         variant: 'destructive',
       });
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // Show loading while checking auth
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">

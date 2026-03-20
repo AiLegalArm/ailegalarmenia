@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
@@ -7,32 +7,66 @@ import type { Database } from '@/integrations/supabase/types';
 type AppRole = Database['public']['Enums']['app_role'];
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
-export function useAuth() {
+interface UseAuthReturn {
+  user: User | null;
+  session: Session | null;
+  profile: Profile | null | undefined;
+  roles: AppRole[];
+  loading: boolean;
+  isLoading: boolean;
+  signIn: (email: string, password: string) => Promise<{ user: User | null; session: Session | null }>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<unknown>;
+  signOut: () => Promise<void>;
+  hasRole: (role: AppRole) => boolean;
+  isAdmin: boolean;
+  isClient: boolean;
+  isAuditor: boolean;
+  isLawyer: boolean;
+  isAuthenticated: boolean;
+  checkAdmin: () => Promise<boolean>;
+}
+
+export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    // Set up listener BEFORE getSession to avoid race conditions (Supabase best practice)
+    let isMounted = true;
+
+    const initAuth = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (isMounted) {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        setLoading(false);
+      }
+    };
+
+    initAuth();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+        if (isMounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
+          
+          if (!session) {
+            queryClient.invalidateQueries({ queryKey: ['user-roles'] });
+            queryClient.invalidateQueries({ queryKey: ['profile'] });
+          }
+        }
       }
     );
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [queryClient]);
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Get user profile
   const { data: profile } = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
@@ -42,35 +76,41 @@ export function useAuth() {
         .select('*')
         .eq('id', user.id)
         .single();
-      if (error) throw error;
-      return data as Profile;
+      if (error && error.code !== 'PGRST116') throw error;
+      return data as Profile | null;
     },
     enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 
-  // Get user roles
-  const { data: roles } = useQuery({
+  const { data: roles, isLoading: rolesLoading } = useQuery({
     queryKey: ['user-roles', user?.id],
     queryFn: async () => {
       if (!user) return [];
       const { data, error } = await supabase
         .rpc('get_user_roles', { _user_id: user.id });
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching roles:', error);
+        return [];
+      }
       return (data as AppRole[]) || [];
     },
     enabled: !!user,
+    staleTime: 30 * 1000,
+    retry: 1,
   });
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) throw error;
-    return data;
-  };
+    return { user: data.user, session: data.session };
+  }, []);
 
-  const signUp = async (email: string, password: string, fullName?: string) => {
+  const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -82,21 +122,37 @@ export function useAuth() {
     });
     if (error) throw error;
     return data;
-  };
+  }, []);
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-  };
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+  }, []);
 
-  const hasRole = (role: AppRole): boolean => {
-    return roles?.includes(role) ?? false;
-  };
+  const hasRole = useCallback((role: AppRole): boolean => {
+    return Array.isArray(roles) && roles.includes(role);
+  }, [roles]);
 
   const isAdmin = hasRole('admin');
   const isClient = hasRole('client');
   const isAuditor = hasRole('auditor');
   const isLawyer = hasRole('lawyer');
+
+  const checkAdmin = useCallback(async (): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const { data, error } = await supabase.rpc('has_role', {
+        _user_id: user.id,
+        _role: 'admin' as AppRole,
+      });
+      if (error) {
+        console.error('Error checking admin role:', error);
+        return false;
+      }
+      return data === true;
+    } catch {
+      return false;
+    }
+  }, [user]);
 
   return {
     user,
@@ -104,6 +160,7 @@ export function useAuth() {
     profile,
     roles: roles || [],
     loading,
+    isLoading: loading || rolesLoading,
     signIn,
     signUp,
     signOut,
@@ -113,5 +170,6 @@ export function useAuth() {
     isAuditor,
     isLawyer,
     isAuthenticated: !!user,
+    checkAdmin,
   };
 }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { motion } from 'framer-motion';
@@ -37,6 +37,7 @@ const Login = () => {
   const { t } = useTranslation(['auth', 'common', 'disclaimer', 'errors']);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -56,22 +57,8 @@ const Login = () => {
       const rawUsername = values.username.trim().replace(/^@+/, '');
       const username = normalizeUsername(values.username);
       const internalEmail = `${username}@app.internal`;
-      const legacyInternalEmail = `${rawUsername}@app.internal`;
       
-      const { error } = await supabase.auth.signInWithPassword({
-        email: internalEmail,
-        password: values.password,
-      });
-
-      if (error && legacyInternalEmail !== internalEmail) {
-        const { error: legacyError } = await supabase.auth.signInWithPassword({
-          email: legacyInternalEmail,
-          password: values.password,
-        });
-        if (legacyError) throw legacyError;
-      } else if (error) {
-        throw error;
-      }
+      await signIn(internalEmail, values.password);
       
       if (!rememberMe) {
         const sessionKey = getSupabaseStorageKey();

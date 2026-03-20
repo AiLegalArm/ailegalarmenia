@@ -7,6 +7,7 @@ import readline from "readline";
 const SUPABASE_URL = "https://dbrhbbaoeurjveconszd.supabase.co"; 
 const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRicmhiYmFvZXVyanZlY29uc3pkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzAwNjY3NiwiZXhwIjoyMDg4NTgyNjc2fQ.F6CsMyyTctwVXAFSUQcuQvRjvtSrtIcn0mNQ-YtZjwM";
 const FILE_PATH = "C:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\Legal_practice.jsonl";
+const SKIP_UNTIL = 5100; // Пропускаем уже обработанные строки
 // ==========================================
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
@@ -83,30 +84,38 @@ async function uploadJsonl() {
   const fileStream = fs.createReadStream(FILE_PATH);
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-  const batchSize = 5; // Снижаем до 5 дел за раз — медленно, но надежно
+  const batchSize = 1; // Загружаем по ОДНОМУ делу. Это медленно, но это ЕДИНСТВЕННЫЙ способ пропихнуть огромные тексты через лимиты Supabase.
   let currentBatch: any[] = [];
   let totalProcessed = 0;
   let totalInserted = 0;
   let totalSkipped = 0;
   let totalErrors = 0;
 
-  async function upsertWithRetry(batch: any[], retries = 7, delay = 5000) {
+  async function upsertWithRetry(batch: any[], retries = 10, delay = 10000) {
     for (let i = 0; i < retries; i++) {
       try {
         const { error } = await supabase.from('legal_practice_kb').upsert(batch, { onConflict: 'echr_case_id' });
         
         if (!error) {
-          // После каждого успеха спим 1 сек, чтобы дать базе "выдохнуть"
-          await new Promise(res => setTimeout(res, 1000));
+          await new Promise(res => setTimeout(res, 500));
           return true;
         }
         
-        // Логируем саму ошибку для диагностики
-        process.stdout.write(`\n⚠️ Ошибка Supabase: ${error.message} (попытка ${i+1}/${retries})`);
+        console.log(`\n❌ Ошибка от Supabase [${error.code || 'NO_CODE'}]: ${error.message}`);
+        if (error.details) console.log(`Подробности: ${error.details}`);
+        if (error.hint) console.log(`Подсказка: ${error.hint}`);
         
+        // Если база говорит про "schema cache" — это значит PostgREST в панике. 
+        // Ждем 15 секунд минимум.
+        const isPanic = error.message.toLowerCase().includes("schema cache") || 
+                        error.message.toLowerCase().includes("upstream") ||
+                        error.message.toLowerCase().includes("connection termination");
+
+        const waitTime = isPanic ? Math.max(delay, 20000) : delay;
+
         if (i < retries - 1) {
-          process.stdout.write(`, ждем ${delay}мс...`);
-          await new Promise(res => setTimeout(res, delay));
+          process.stdout.write(`\n⚠️ Ожидание ${waitTime}мс перед повтором (попытка ${i+1}/${retries})...`);
+          await new Promise(res => setTimeout(res, waitTime));
           delay *= 1.5; 
           continue;
         }
@@ -127,6 +136,12 @@ async function uploadJsonl() {
     if (!line.trim()) continue;
     
     totalProcessed++;
+
+    if (totalProcessed < SKIP_UNTIL) {
+      if (totalProcessed % 500 === 0) process.stdout.write(`\rПропуск: ${totalProcessed}...`);
+      continue;
+    }
+    
     let caseObj: any;
     try {
       caseObj = JSON.parse(line);
@@ -142,7 +157,7 @@ async function uploadJsonl() {
     }
 
     const rawText = extractCaseText(caseObj);
-    const contentText = rawText.replace(/\u0000/g, "").slice(0, 500000);
+    const contentText = rawText.replace(/\u0000/g, "").slice(0, 250000); // Срезал до 250к, чтобы запрос не "умирал"
     if (!contentText) {
       totalSkipped++;
       continue;
