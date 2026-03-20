@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
 import { getLoginEmailCandidates } from '@/lib/auth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -38,6 +38,7 @@ const Login = () => {
   const { t } = useTranslation(['auth', 'common', 'disclaimer', 'errors']);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { signIn } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -49,26 +50,11 @@ const Login = () => {
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
     try {
-      const emailCandidates = getLoginEmailCandidates(values.username);
-      let lastError: Error | null = null;
-
-      for (const email of emailCandidates) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password: values.password,
-        });
-
-        if (!error) {
-          lastError = null;
-          break;
-        }
-
-        lastError = error;
-      }
-
-      if (lastError) {
-        throw lastError;
-      }
+      const rawUsername = values.username.trim().replace(/^@+/, '');
+      const username = normalizeUsername(values.username);
+      const internalEmail = `${username}@app.internal`;
+      
+      await signIn(internalEmail, values.password);
       
       if (!rememberMe) {
         const sessionKey = getSupabaseStorageKey();

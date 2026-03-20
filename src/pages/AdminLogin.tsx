@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -21,8 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Shield, Loader2 } from 'lucide-react';
 
 const loginSchema = z.object({
-  username: z.string().min(3).max(50),
-  password: z.string().min(6),
+  username: z.string().min(1, 'Username is required').max(50),
+  password: z.string().min(1, 'Password is required'),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -30,19 +30,47 @@ type LoginValues = z.infer<typeof loginSchema>;
 const AdminLogin = () => {
   const { t } = useTranslation(['auth', 'common', 'errors']);
   const navigate = useNavigate();
-  const { signIn, signOut, isAdmin, user, loading: authLoading } = useAuth();
+  const { signIn, isAdmin, user, loading: authLoading, isLoading: authIsLoading, checkAdmin } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [loginSuccess, setLoginSuccess] = useState(false);
+  const loginAttemptRef = useRef(0);
+  const hasRedirected = useRef(false);
+
+  const handleAdminRedirect = useCallback(async () => {
+    if (hasRedirected.current) return;
+    if (!user) return;
+    
+    loginAttemptRef.current += 1;
+    const attempt = loginAttemptRef.current;
+    
+    try {
+      const adminStatus = await checkAdmin();
+      if (attempt !== loginAttemptRef.current) return;
+      
+      if (adminStatus) {
+        hasRedirected.current = true;
+        navigate('/admin', { replace: true });
+      }
+    } catch (error) {
+      console.error('Admin check failed:', error);
+    }
+  }, [user, checkAdmin, navigate]);
 
   useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-
-    if (user && isAdmin) {
+    if (!authLoading && user && isAdmin && !hasRedirected.current) {
       navigate('/admin', { replace: true });
     }
   }, [user, isAdmin, authLoading, navigate]);
+
+  useEffect(() => {
+    if (loginSuccess && user && !authIsLoading && !hasRedirected.current) {
+      const timer = setTimeout(() => {
+        handleAdminRedirect();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loginSuccess, user, authIsLoading, handleAdminRedirect]);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -51,25 +79,27 @@ const AdminLogin = () => {
 
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
+    setLoginSuccess(false);
+    hasRedirected.current = false;
+    loginAttemptRef.current += 1;
+    const currentAttempt = loginAttemptRef.current;
 
     try {
-      const emailCandidates = getLoginEmailCandidates(values.username);
-      let signedIn = false;
-      let lastError: Error | null = null;
-
-      for (const email of emailCandidates) {
-        try {
-          await signIn(email, values.password);
-          signedIn = true;
-          lastError = null;
-          break;
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error('Unknown error');
-        }
-      }
-
-      if (!signedIn) {
-        throw lastError ?? new Error(t('invalid_credentials', 'Invalid username or password'));
+      const username = values.username.trim().replace(/^@+/, '').toLowerCase();
+      const internalEmail = `${username}@app.internal`;
+      
+      const result = await signIn(internalEmail, values.password);
+      
+      if (result.user && currentAttempt === loginAttemptRef.current) {
+        setLoginSuccess(true);
+        
+        setTimeout(async () => {
+          const adminStatus = await checkAdmin();
+          if (adminStatus && currentAttempt === loginAttemptRef.current && !hasRedirected.current) {
+            hasRedirected.current = true;
+            navigate('/admin', { replace: true });
+          }
+        }, 100);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -82,34 +112,10 @@ const AdminLogin = () => {
           : t('invalid_credentials', 'Invalid username or password'),
         variant: 'destructive',
       });
+    } finally {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (authLoading || !user) {
-      return;
-    }
-
-    if (!isAdmin) {
-      const handleUnauthorizedAdminLogin = async () => {
-        try {
-          await signOut();
-        } catch (error) {
-          console.error('Failed to sign out non-admin user from admin flow', error);
-        } finally {
-          toast({
-            title: t('errors:access_denied', 'Access denied'),
-            description: t('errors:admin_access_required', 'Administrator access is required to use the admin panel.'),
-            variant: 'destructive',
-          });
-          setIsLoading(false);
-        }
-      };
-
-      void handleUnauthorizedAdminLogin();
-    }
-  }, [authLoading, isAdmin, signOut, t, toast, user]);
 
   if (authLoading) {
     return (

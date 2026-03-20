@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,15 +36,32 @@ import { DataSyncToLive } from "@/components/admin/DataSyncToLive";
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { t } = useTranslation(['admin']);
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, signOut, isAdmin, loading: authLoading, isLoading: authIsLoading, checkAdmin } = useAuth();
+  const [verifiedAdmin, setVerifiedAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/admin/login");
+      return;
+    }
+
+    if (user && !verifiedAdmin) {
+      checkAdmin().then((isAdminUser) => {
+        if (isAdminUser) {
+          setVerifiedAdmin(true);
+        } else {
+          navigate("/admin/login");
+        }
+      });
+    }
+  }, [user, authLoading, checkAdmin, navigate, verifiedAdmin]);
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/admin/login");
   };
 
-  // Show loading while checking auth
-  if (authLoading) {
+  if (authLoading || authIsLoading || !verifiedAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -51,8 +69,7 @@ const AdminPanel = () => {
     );
   }
 
-  // ProtectedRoute handles non-admin redirects before render
-  if (!user) {
+  if (!user || !isAdmin) {
     return null;
   }
 
