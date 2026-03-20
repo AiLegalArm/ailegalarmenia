@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   BookOpenText,
   ArrowRightLeft,
-  Megaphone,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminKnowledgeBaseTab } from "@/components/admin/AdminKnowledgeBaseTab";

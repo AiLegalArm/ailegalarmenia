@@ -12,6 +12,13 @@ serve(async (req) => {
   const corsHeaders = cors.corsHeaders!;
 
   try {
+    if (req.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 405,
+      });
+    }
+
     // Get the authorization header to verify admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {

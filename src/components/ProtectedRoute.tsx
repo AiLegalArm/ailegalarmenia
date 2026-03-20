@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  requiredRole?: "admin" | "lawyer" | "client" | "auditor";
+  requiredRole?: 'admin' | 'lawyer' | 'client' | 'auditor';
 }
 
 const getLoginRedirect = (requiredRole?: string): string => {
@@ -16,9 +16,8 @@ const getLoginRedirect = (requiredRole?: string): string => {
 };
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  const location = useLocation();
+  const { user, loading, hasRole } = useAuth();
 
   const checkAuth = useCallback(async () => {
     try {
@@ -80,9 +79,9 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
 
   if (isLoading) {
     return (
-      <div 
-        className="flex min-h-screen items-center justify-center" 
-        role="status" 
+      <div
+        className="flex min-h-screen items-center justify-center"
+        role="status"
         aria-label="Checking authorization"
       >
         <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
@@ -91,8 +90,18 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     );
   }
 
-  if (!isAuthorized) {
-    return null;
+  if (!user) {
+    return (
+      <Navigate
+        to={getAuthRedirectPath(requiredRole)}
+        replace
+        state={{ from: location.pathname }}
+      />
+    );
+  }
+
+  if (requiredRole && !hasRole(requiredRole)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

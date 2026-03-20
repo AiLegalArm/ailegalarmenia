@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
+import { getLoginEmailCandidates } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -108,7 +109,7 @@ const AdminLogin = () => {
         title: t('errors:login_failed', 'Login failed'),
         description: isConnectionIssue
           ? `${t('errors:connection_lost', 'Connection lost')}. ${t('errors:try_again', 'Try again')}`
-          : message,
+          : t('invalid_credentials', 'Invalid username or password'),
         variant: 'destructive',
       });
     } finally {
@@ -132,9 +133,7 @@ const AdminLogin = () => {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <CardTitle className="text-2xl">Ադմին պանել</CardTitle>
-          <CardDescription>
-            Միայն ադմինիստրատորների համար
-          </CardDescription>
+          <CardDescription>Միայն ադմինիստրատորների համար</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -146,12 +145,7 @@ const AdminLogin = () => {
                   <FormItem>
                     <FormLabel>{t('username')}</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="text" 
-                        autoComplete="username"
-                        placeholder="admin"
-                        {...field} 
-                      />
+                      <Input type="text" autoComplete="username" placeholder="admin" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -164,11 +158,11 @@ const AdminLogin = () => {
                   <FormItem>
                     <FormLabel>{t('password')}</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="password" 
+                      <Input
+                        type="password"
                         autoComplete="current-password"
                         placeholder="••••••••"
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -176,11 +170,7 @@ const AdminLogin = () => {
                 )}
               />
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading}
-              >
+              <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Մուտք
               </Button>

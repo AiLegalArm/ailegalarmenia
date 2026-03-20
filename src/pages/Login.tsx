@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
+import { getLoginEmailCandidates } from '@/lib/auth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { motion } from 'framer-motion';
 
@@ -45,11 +46,6 @@ const Login = () => {
     resolver: zodResolver(loginSchema),
     defaultValues: { username: '', password: '' },
   });
-
-  const normalizeUsername = useMemo(
-    () => (raw: string) => raw.trim().replace(/^@+/, '').toLowerCase(),
-    []
-  );
 
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);

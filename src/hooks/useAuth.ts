@@ -71,6 +71,7 @@ export function useAuth(): UseAuthReturn {
     queryKey: ['profile', user?.id],
     queryFn: async () => {
       if (!user) return null;
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -106,6 +107,7 @@ export function useAuth(): UseAuthReturn {
       email,
       password,
     });
+
     if (error) throw error;
     return { user: data.user, session: data.session };
   }, []);
@@ -120,6 +122,7 @@ export function useAuth(): UseAuthReturn {
         },
       },
     });
+
     if (error) throw error;
     return data;
   }, []);
@@ -157,18 +160,20 @@ export function useAuth(): UseAuthReturn {
   return {
     user,
     session,
-    profile,
-    roles: roles || [],
+    profile: profileQuery.data ?? null,
+    profileError: profileQuery.error ?? null,
+    roles,
+    rolesError: rolesQuery.error ?? null,
     loading,
     isLoading: loading || rolesLoading,
     signIn,
     signUp,
     signOut,
     hasRole,
-    isAdmin,
-    isClient,
-    isAuditor,
-    isLawyer,
+    isAdmin: hasRole('admin'),
+    isClient: hasRole('client'),
+    isAuditor: hasRole('auditor'),
+    isLawyer: hasRole('lawyer'),
     isAuthenticated: !!user,
     checkAdmin,
   };
