@@ -44,16 +44,16 @@ export function useAuth(): UseAuthReturn {
       }
     };
 
-    initAuth();
+    void initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event, nextSession) => {
         if (isMounted) {
-          setSession(session);
-          setUser(session?.user ?? null);
+          setSession(nextSession);
+          setUser(nextSession?.user ?? null);
           setLoading(false);
-          
-          if (!session) {
+
+          if (!nextSession) {
             queryClient.invalidateQueries({ queryKey: ['user-roles'] });
             queryClient.invalidateQueries({ queryKey: ['profile'] });
           }
@@ -85,15 +85,14 @@ export function useAuth(): UseAuthReturn {
     retry: 1,
   });
 
-  const { data: roles, isLoading: rolesLoading } = useQuery({
+  const { data: roles = [], isLoading: rolesLoading } = useQuery({
     queryKey: ['user-roles', user?.id],
     queryFn: async () => {
-      if (!user) return [];
-      const { data, error } = await supabase
-        .rpc('get_user_roles', { _user_id: user.id });
+      if (!user) return [] as AppRole[];
+      const { data, error } = await supabase.rpc('get_user_roles', { _user_id: user.id });
       if (error) {
         console.error('Error fetching roles:', error);
-        return [];
+        return [] as AppRole[];
       }
       return (data as AppRole[]) || [];
     },
@@ -132,13 +131,8 @@ export function useAuth(): UseAuthReturn {
   }, []);
 
   const hasRole = useCallback((role: AppRole): boolean => {
-    return Array.isArray(roles) && roles.includes(role);
+    return roles.includes(role);
   }, [roles]);
-
-  const isAdmin = hasRole('admin');
-  const isClient = hasRole('client');
-  const isAuditor = hasRole('auditor');
-  const isLawyer = hasRole('lawyer');
 
   const checkAdmin = useCallback(async (): Promise<boolean> => {
     if (!user) return false;
@@ -160,10 +154,8 @@ export function useAuth(): UseAuthReturn {
   return {
     user,
     session,
-    profile: profileQuery.data ?? null,
-    profileError: profileQuery.error ?? null,
+    profile,
     roles,
-    rolesError: rolesQuery.error ?? null,
     loading,
     isLoading: loading || rolesLoading,
     signIn,
