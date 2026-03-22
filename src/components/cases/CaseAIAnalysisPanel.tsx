@@ -52,7 +52,7 @@ export function CaseAIAnalysisPanel({
   referencesText: _legacyReferencesText
 }: CaseAIAnalysisPanelProps) {
   const storeText = useReferencesText(caseId);
-  const referencesText = _legacyReferencesText?.trim() ? _legacyReferencesText : storeText;
+  const referencesText = (_legacyReferencesText?.trim() ? _legacyReferencesText : storeText) ?? undefined;
   const { t, i18n } = useTranslation(['ai', 'cases', 'common', 'disclaimer', 'errors']);
   const { user } = useAuth();
   const { toast } = useToast();
