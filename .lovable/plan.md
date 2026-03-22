@@ -1,33 +1,25 @@
 
 
-## Plan: Create Admin User HaykAdmin56
+## Problem
 
-### What will be done
+Login fails for all users with "Invalid API key" because:
 
-Create a new admin user via the existing `admin-create-user` edge function or directly through database operations.
+1. `src/integrations/supabase/client.ts` has been manually edited (it should be auto-generated and never modified)
+2. The fallback URL is `https://dbrhbbaoeurjveconszd.supabase.co` (old project)
+3. The API key is for `ekvhhsemntnylaivqufs` (current Lovable Cloud project)
+4. The env vars aren't loading due to TypeScript issues with `import.meta.env`, so the mismatched fallback is always used
 
-### Steps
+## Fix
 
-1. **Call the edge function** `admin-create-user` with:
-   - `username`: `haykadmin56` (normalized lowercase)
-   - `password`: `Prado006`
-   - `role`: `admin`
-   - `full_name`: `Hayk Admin`
+**Restore `client.ts` to the standard auto-generated version** that correctly uses the Lovable Cloud project credentials:
 
-2. **Verify creation** by querying profiles and user_roles tables
+- URL: `https://ekvhhsemntnylaivqufs.supabase.co`
+- Key: the anon key for `ekvhhsemntnylaivqufs`
+- Remove all fallback logic and TypeScript workarounds
+- Standard Supabase client initialization
 
-### Technical details
+### File changed
+- `src/integrations/supabase/client.ts` — revert to correct auto-generated format
 
-- Internal email will be: `haykadmin56@app.internal`
-- The edge function creates the auth user, profile, and assigns the admin role
-- Login path: `/admin/login`
-- Password meets minimum 6-char requirement
-
-### Credentials summary
-
-| Field | Value |
-|-------|-------|
-| Username | HaykAdmin56 |
-| Password | Prado006 |
-| Login URL | `/admin/login` |
+This single change fixes the URL mismatch and restores login functionality for all users (HaykAdmin56, HaykAuditor56, HaykLawyer56).
 
