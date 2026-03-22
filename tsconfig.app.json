@@ -23,6 +23,7 @@
     },
     "skipLibCheck": true,
     "strict": false,
+    "strictNullChecks": true,
     "target": "ES2020",
     "types": [
       "vitest/globals",
@@ -32,8 +33,5 @@
   },
   "include": [
     "src"
-  ],
-  "exclude": [
-    "src/integrations/supabase/client.ts"
   ]
 }
