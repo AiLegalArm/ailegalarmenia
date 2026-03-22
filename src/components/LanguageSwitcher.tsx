@@ -1,12 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Globe } from 'lucide-react';
+import { ChevronDown, Globe } from 'lucide-react';
 
 const languages = [
   { code: 'hy', name: '\u0540\u0561\u0575\u0565\u0580\u0565\u0576', flag: '\uD83C\uDDE6\uD83C\uDDF2' },
@@ -23,28 +16,22 @@ export function LanguageSwitcher() {
   };
 
   return (
-    <div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="gap-2">
-            <Globe className="h-4 w-4" />
-            <span className="hidden sm:inline">{currentLang.flag} {currentLang.name}</span>
-            <span className="sm:hidden">{currentLang.flag}</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {languages.map((lang) => (
-            <DropdownMenuItem
-              key={lang.code}
-              onClick={() => changeLanguage(lang.code)}
-              className={i18n.language === lang.code ? 'bg-accent' : ''}
-            >
-              <span className="mr-2">{lang.flag}</span>
-              {lang.name}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    <label className="relative inline-flex h-10 items-center gap-2 rounded-[10px] border border-input bg-background px-3 text-sm text-foreground shadow-sm">
+      <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="sr-only">Select language</span>
+      <select
+        value={currentLang.code}
+        onChange={(event) => changeLanguage(event.target.value)}
+        aria-label="Select language"
+        className="min-w-0 cursor-pointer appearance-none bg-transparent pr-5 text-sm outline-none"
+      >
+        {languages.map((lang) => (
+          <option key={lang.code} value={lang.code}>
+            {lang.flag} {lang.name}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 h-4 w-4 text-muted-foreground" />
+    </label>
   );
 }
