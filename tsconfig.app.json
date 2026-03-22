@@ -16,7 +16,6 @@
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    
     "paths": {
       "@/*": [
         "./src/*"
@@ -33,5 +32,8 @@
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/integrations/supabase/client.ts"
   ]
 }
