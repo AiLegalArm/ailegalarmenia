@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
-import { getLoginEmailCandidates } from '@/lib/auth';
+import { getLoginEmailCandidates, normalizeUsername } from '@/lib/auth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { motion } from 'framer-motion';
 
