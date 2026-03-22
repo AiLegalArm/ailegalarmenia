@@ -170,7 +170,7 @@ const CaseDetail = () => {
       updatedAt: new Date(caseData.updated_at),
       files: files?.map(f => ({
         original_filename: f.original_filename,
-        file_size: f.file_size,
+        file_size: f.file_size ?? 0,
         created_at: f.created_at
       })),
       timeline,
