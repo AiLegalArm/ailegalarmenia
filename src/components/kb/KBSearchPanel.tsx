@@ -283,7 +283,7 @@ export function KBSearchPanel({ caseId, onInsertReference, onReferencesChange }:
 
       const { data, error } = await supabase.rpc("search_kb_chunks", {
         p_query: trimmed,
-        p_category: null,
+        p_category: null as any,
         p_limit_chunks: 50,
         p_limit_docs: 10,
         p_chunks_per_doc: 3,

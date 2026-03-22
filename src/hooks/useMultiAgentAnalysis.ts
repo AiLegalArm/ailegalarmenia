@@ -345,7 +345,7 @@ export function useMultiAgentAnalysis(): UseMultiAgentAnalysisReturn {
         findings: data.findings || [],
         sources_used: data.sources || [],
         tokens_used: data.tokensUsed
-      };
+      } as AgentAnalysisRun;
       
       await supabase
         .from("agent_analysis_runs")

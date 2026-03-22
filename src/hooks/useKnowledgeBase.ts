@@ -68,7 +68,7 @@ export function useKnowledgeBase(filters: KBFilters = {}) {
       const chunkSearchPromise = supabase
         .rpc('search_kb_chunks', {
           p_query: filters.search,
-          p_category: filters.category && filters.category !== 'all' ? filters.category : null,
+          p_category: (filters.category && filters.category !== 'all' ? filters.category : null) as any,
           p_limit_chunks: 50,
           p_limit_docs: 10,
           p_chunks_per_doc: 3,

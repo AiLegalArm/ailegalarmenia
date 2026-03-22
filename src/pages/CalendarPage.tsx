@@ -126,7 +126,7 @@ const CalendarPage = () => {
   }, [cases, reminders]);
 
   const totalEvents = events.length;
-  const upcomingEvents = events.filter(e => e.start >= new Date()).length;
+  const upcomingEvents = events.filter(e => e.start && e.start >= new Date()).length;
 
   const getEventStyle = useCallback((event: CalendarEvent) => {
     if (event.type === 'case' && event.caseData) {

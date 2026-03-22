@@ -43,7 +43,7 @@ interface CaseAIAnalysisPanelProps {
 
 export function CaseAIAnalysisPanel({
   caseId,
-  facts,
+  facts: _facts,
   legalQuestion,
   caseNumber,
   caseTitle,
@@ -51,8 +51,9 @@ export function CaseAIAnalysisPanel({
   onOpenComplaintGenerator,
   referencesText: _legacyReferencesText
 }: CaseAIAnalysisPanelProps) {
+  const facts = _facts ?? undefined;
   const storeText = useReferencesText(caseId);
-  const referencesText = _legacyReferencesText?.trim() ? _legacyReferencesText : storeText;
+  const referencesText = (_legacyReferencesText?.trim() ? _legacyReferencesText : storeText) ?? undefined;
   const { t, i18n } = useTranslation(['ai', 'cases', 'common', 'disclaimer', 'errors']);
   const { user } = useAuth();
   const { toast } = useToast();

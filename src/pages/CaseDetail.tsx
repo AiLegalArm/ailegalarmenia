@@ -170,7 +170,7 @@ const CaseDetail = () => {
       updatedAt: new Date(caseData.updated_at),
       files: files?.map(f => ({
         original_filename: f.original_filename,
-        file_size: f.file_size,
+        file_size: f.file_size ?? 0,
         created_at: f.created_at
       })),
       timeline,
@@ -221,7 +221,7 @@ const CaseDetail = () => {
         updatedAt: new Date(caseData.updated_at),
         userName: user?.email,
         language: 'hy',
-        files: filesRes.data?.map(f => ({ original_filename: f.original_filename, file_size: f.file_size, created_at: f.created_at })),
+        files: filesRes.data?.map(f => ({ original_filename: f.original_filename, file_size: f.file_size ?? 0, created_at: f.created_at })),
         timeline,
         aiAnalyses: analysesRes.data?.map(a => ({ role: a.role, response_text: a.response_text, created_at: a.created_at, sources_used: a.sources_used })),
         agentRuns: agentRunsRes.data?.map(r => ({ agent_type: r.agent_type, status: r.status, summary: r.summary || undefined, analysis_result: r.analysis_result || undefined, completed_at: r.completed_at || undefined, tokens_used: r.tokens_used || undefined })),
