@@ -51,6 +51,7 @@ export function CaseAIAnalysisPanel({
   onOpenComplaintGenerator,
   referencesText: _legacyReferencesText
 }: CaseAIAnalysisPanelProps) {
+  const facts = _facts ?? undefined;
   const storeText = useReferencesText(caseId);
   const referencesText = (_legacyReferencesText?.trim() ? _legacyReferencesText : storeText) ?? undefined;
   const { t, i18n } = useTranslation(['ai', 'cases', 'common', 'disclaimer', 'errors']);
