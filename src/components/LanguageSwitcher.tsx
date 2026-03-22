@@ -1,4 +1,3 @@
-import { forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +14,7 @@ const languages = [
   { code: 'ru', name: '\u0420\u0443\u0441\u0441\u043A\u0438\u0439', flag: '\uD83C\uDDF7\uD83C\uDDFA' },
 ];
 
-export const LanguageSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
+export function LanguageSwitcher() {
   const { i18n } = useTranslation('common');
   const currentLang = languages.find((l) => l.code === i18n.language) || languages[0];
 
@@ -24,7 +23,7 @@ export const LanguageSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
   };
 
   return (
-    <div ref={ref}>
+    <div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2">
@@ -48,6 +47,4 @@ export const LanguageSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
       </DropdownMenu>
     </div>
   );
-});
-
-LanguageSwitcher.displayName = 'LanguageSwitcher';
+}
