@@ -1,36 +1,33 @@
-# Pipeline Setup Roadmap (v2)
 
-## Current State
-- Orchestrator boots every minute but silently fails (522 errors)
-- Workers get 522 Connection timed out from Supabase RPC
-- cron-job.org times out at 30s
-- Supabase infra experiencing transient connection issues
 
----
+## Plan: Create Admin User HaykAdmin56
 
-## Phase 1: Harden Orchestrator ✏️
-- [ ] Add fetch timeout (25s per worker call)
-- [ ] Add retry logic for 5xx/522 errors
-- [ ] Improve error logging
-- [ ] Return partial results even if some workers fail
+### What will be done
 
-## Phase 2: Harden Workers ✏️
-- [ ] Handle HTML error responses (522 returns HTML)
-- [ ] Add graceful degradation on transient errors
+Create a new admin user via the existing `admin-create-user` edge function or directly through database operations.
 
-## Phase 3: External Cron Setup (cron-job.org) ⚙️
-- [ ] Set timeout to 120-180 seconds
-- [ ] Verify x-internal-key header matches CRON_WORKER_KEY
-- [ ] Test successful 200 response
+### Steps
 
-## Phase 4: Verify End-to-End ✅
-- [ ] Check orchestrator logs show stage=chunk/embed/enrich
-- [ ] Check worker logs show picked > 0
-- [ ] Confirm pipeline processes documents automatically
+1. **Call the edge function** `admin-create-user` with:
+   - `username`: `haykadmin56` (normalized lowercase)
+   - `password`: `Prado006`
+   - `role`: `admin`
+   - `full_name`: `Hayk Admin`
 
----
+2. **Verify creation** by querying profiles and user_roles tables
 
-## Secrets Checklist
-- CRON_WORKER_KEY — set in Lovable, must match cron-job.org header
-- INTERNAL_INGEST_KEY — used by orchestrator→worker calls
-- OPENAI_API_KEY — used by embed and enrich workers
+### Technical details
+
+- Internal email will be: `haykadmin56@app.internal`
+- The edge function creates the auth user, profile, and assigns the admin role
+- Login path: `/admin/login`
+- Password meets minimum 6-char requirement
+
+### Credentials summary
+
+| Field | Value |
+|-------|-------|
+| Username | HaykAdmin56 |
+| Password | Prado006 |
+| Login URL | `/admin/login` |
+
