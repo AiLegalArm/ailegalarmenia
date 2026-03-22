@@ -102,10 +102,10 @@ export function CaseComments({ caseId }: CaseCommentsProps) {
         .from('case_comments')
         .insert({
           case_id: caseId,
-          author_id: user?.id,
+          author_id: user?.id ?? '',
           content,
           is_internal: true,
-        });
+        } as any);
       if (error) throw error;
     },
     onSuccess: () => {

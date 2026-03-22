@@ -256,7 +256,7 @@ export function DictionaryImport() {
             </Button>
             <Button
               onClick={handleImport}
-              disabled={!file || phase === 'validating' || phase === 'importing' || (phase === 'validated' && validation && !validation.ok)}
+              disabled={!file || phase === 'validating' || phase === 'importing' || (phase === 'validated' && validation && !validation.ok) || false}
             >
               {phase === 'importing' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
               Import

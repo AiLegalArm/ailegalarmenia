@@ -150,8 +150,7 @@ const Login = () => {
                             autoComplete="username"
                             placeholder={t('username_placeholder', 'Enter your username')}
                             aria-describedby="login-username-error"
-                            onChange={(e) => field.onChange(e.target.value)}
-                            {...field} 
+                            {...field}
                           />
                         </FormControl>
                         <FormMessage id="login-username-error" />

@@ -145,7 +145,7 @@ export function UserManagement() {
       if (rolesError) throw rolesError;
 
       // Get auditor profiles
-      const auditorIds = profiles?.map(p => p.auditor_id).filter(Boolean) || [];
+      const auditorIds = profiles?.map(p => p.auditor_id).filter((id): id is string => id != null) || [];
       const { data: auditors, error: auditorsError } = auditorIds.length > 0 
         ? await supabase
             .from('profiles')
