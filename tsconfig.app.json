@@ -16,7 +16,7 @@
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "suppressImplicitAnyIndexErrors": true,
+    "noPropertyAccessFromIndexSignature": false,
     "paths": {
       "@/*": [
         "./src/*"
