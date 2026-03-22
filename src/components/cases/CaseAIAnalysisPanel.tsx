@@ -43,7 +43,7 @@ interface CaseAIAnalysisPanelProps {
 
 export function CaseAIAnalysisPanel({
   caseId,
-  facts,
+  facts: _facts,
   legalQuestion,
   caseNumber,
   caseTitle,
