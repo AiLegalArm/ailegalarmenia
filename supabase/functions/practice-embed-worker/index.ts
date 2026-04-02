@@ -20,17 +20,17 @@ async function sha256Hex(text: string): Promise<string> {
   return new TextDecoder().decode(hexEncode(new Uint8Array(hash)));
 }
 
-const EMBEDDING_MODEL = "text-embedding-3-large";
-const EMBEDDING_DIMENSIONS = 3072;
+const EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_DIMENSIONS = 1536;
 const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 2; // reduced until token-overflow stabilised
 
-// Target table → column mapping (only 3072d targets allowed)
+// Target table -> column mapping for text-embedding-3-small.
 const EMBEDDING_TARGETS: Record<string, { column: string; dim: number }> = {
-  knowledge_base: { column: "embedding", dim: 3072 },
-  legal_practice_kb: { column: "embedding", dim: 3072 },
-  legal_chunks: { column: "embedding", dim: 3072 },
+  knowledge_base: { column: "embedding", dim: 1536 },
+  legal_practice_kb: { column: "embedding", dim: 1536 },
+  legal_chunks: { column: "embedding", dim: 1536 },
 };
 
 // ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────

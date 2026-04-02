@@ -12,7 +12,7 @@
  *   const single  = await generateEmbedding("text 1");
  */
 
-const DEFAULT_MODEL = "text-embedding-3-large";
+const DEFAULT_MODEL = "text-embedding-3-small";
 const MAX_BATCH_SIZE = 100;
 const FUNCTION_URL_ENV = "SUPABASE_URL"; // injected by Supabase runtime
 

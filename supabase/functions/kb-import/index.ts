@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors } from "../_shared/edge-security.ts";
+import { queuePipelineJobs } from "../_shared/pipeline-jobs.ts";
 
 type KBCategory = 
   | "constitution" | "civil_code" | "criminal_code" | "labor_code" 
@@ -103,7 +104,11 @@ serve(async (req) => {
 
     // Clear existing if requested
     if (body.clearExisting) {
-      await supabase.from("knowledge_base").update({ is_active: false }).eq("is_active", true);
+      const { error: clearErr } = await supabase
+        .from("knowledge_base")
+        .delete()
+        .eq("is_active", true);
+      if (clearErr) throw clearErr;
     }
 
     let rows: Array<Record<string, unknown>> = [];
@@ -142,16 +147,30 @@ serve(async (req) => {
     // Insert in batches
     const batchSize = 50;
     let inserted = 0;
+    const insertedIds: string[] = [];
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
-      const { error } = await supabase.from("knowledge_base").insert(batch);
+      const { data, error } = await supabase
+        .from("knowledge_base")
+        .insert(batch)
+        .select("id");
       if (error) { console.error(JSON.stringify({ ts: new Date().toISOString(), lvl: "error", fn: "kb-import", msg: "Insert error" })); throw error; }
       inserted += batch.length;
+      insertedIds.push(...(data || []).map((row: { id: string }) => row.id));
     }
+
+    const queued = await queuePipelineJobs({
+      supabase,
+      sourceTable: "knowledge_base",
+      documentIds: insertedIds,
+      enqueueEmbed: true,
+      enqueueEnrich: false,
+    });
 
     return new Response(JSON.stringify({
       success: true, imported: inserted, category: body.category,
       sampleTitles: rows.slice(0, 3).map(r => r.title),
+      queued,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error) {

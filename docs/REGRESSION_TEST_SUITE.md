@@ -3,8 +3,8 @@
 ## Variables
 
 ```bash
-PROJECT_URL="https://ekvhhsemntnylaivqufs.supabase.co"
-ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdmhoc2VtbnRueWxhaXZxdWZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5NjgxNjAsImV4cCI6MjA4NzU0NDE2MH0.E0-fH0HQS3CC-zXUN-Xw8qO2_tSFYSDXz-Q7dkKHumw"
+PROJECT_URL="https://dbrhbbaoeurjveconszd.supabase.co"
+ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRicmhiYmFvZXVyanZlY29uc3pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDY2NzYsImV4cCI6MjA4ODU4MjY3Nn0.1S9xOTs5cO2_qhOlzETpvxnefCFQYei5h-ibXSbkkdU"
 INTERNAL_KEY="<your INTERNAL_INGEST_KEY>"
 USER_JWT="<valid user JWT from login>"
 OTHER_USER_JWT="<JWT of a different user>"

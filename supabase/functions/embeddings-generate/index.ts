@@ -1,7 +1,7 @@
 /**
  * embeddings-generate — Central server-side embeddings service.
  *
- * Uses OpenRouter API (OpenAI-compatible) with text-embedding-3-large model.
+ * Uses OpenAI embeddings with text-embedding-3-small by default.
  *
  * Security:
  *   - Requires x-internal-key header (INTERNAL_INGEST_KEY) OR valid Bearer JWT.
@@ -16,14 +16,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MODEL = "text-embedding-3-large";
+const DEFAULT_MODEL = "text-embedding-3-small";
 const MAX_BATCH_SIZE = 100;
 const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1_000;
 
 // ─── CORS via centralized handler ──────────────────────────────────────────
-import { handleCors as _handleCorsEmbed } from "../_shared/edge-security.ts";
+import { handleCors } from "../_shared/edge-security.ts";
 
 // ─── Auth guard ────────────────────────────────────────────────────────────
 async function authenticate(req: Request): Promise<boolean> {
@@ -126,8 +126,12 @@ async function callOpenAIEmbeddings(
 
 // ─── Main handler ──────────────────────────────────────────────────────────
 serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   // Auth

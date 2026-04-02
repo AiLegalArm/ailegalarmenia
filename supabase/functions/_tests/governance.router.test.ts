@@ -129,8 +129,8 @@ Deno.test("governance: embedding model only allowed for generate-embeddings", ()
   const cfg = getModelConfig("generate-embeddings");
   assertEquals(
     cfg.model,
-    "openai/text-embedding-3-large",
-    "generate-embeddings must use openai/text-embedding-3-large"
+    "openai/text-embedding-3-small",
+    "generate-embeddings must use openai/text-embedding-3-small"
   );
 });
 

@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors } from "../_shared/edge-security.ts";
+import { queuePipelineJobs } from "../_shared/pipeline-jobs.ts";
 
 // =======================================
 // Unicode escape normalizer
@@ -271,7 +272,7 @@ function validateExtractedData(raw: unknown): ExtractedData {
 
   if (!isStringArray(raw.key_violations)) throw new Error("Invalid: key_violations");
 
-  return raw as ExtractedData;
+  return raw as unknown as ExtractedData;
 }
 
 // =======================================
@@ -509,6 +510,10 @@ CRITICAL RULES:
 // =======================================
 
 serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors.errorResponse) return cors.errorResponse;
+  const corsHeaders = cors.corsHeaders!;
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
@@ -630,7 +635,16 @@ serve(async (req) => {
 
       if (updateErr) throw updateErr;
 
-      return new Response(JSON.stringify({ success: true, enriched: true, updated_fields: Object.keys(updatePayload) }), {
+      const queued = await queuePipelineJobs({
+        supabase: adminDb,
+        sourceTable: "legal_practice_kb",
+        documentIds: [enrichDocId],
+        enqueueEmbed: true,
+        enqueueEnrich: false,
+        resetExisting: true,
+      });
+
+      return new Response(JSON.stringify({ success: true, enriched: true, updated_fields: Object.keys(updatePayload), queued }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -684,9 +698,11 @@ serve(async (req) => {
             is_anonymized: item.is_anonymized ?? false,
             visibility: item.visibility || "ai_only",
             source_name: item.source_name || null,
+            source_url: item.source_url || null,
             court_name: item.court_name || null,
             case_number_anonymized: item.case_number_anonymized || null,
             decision_date: isISODateOrNull(item.decision_date) ? item.decision_date : null,
+            applied_articles: item.applied_articles || null,
             legal_reasoning_summary: item.legal_reasoning_summary || null,
             key_violations: Array.isArray(item.key_violations) ? item.key_violations : null,
             description: item.description || null,
@@ -761,57 +777,19 @@ serve(async (req) => {
         }
       }
 
-      // Generate and insert chunks for each inserted practice row (idempotent)
-      let insertedChunks = 0;
-      const CHUNK_SIZE = 8000;
-      const CHUNK_OVERLAP = 200;
+      const queued = await queuePipelineJobs({
+        supabase: adminDb,
+        sourceTable: "legal_practice_kb",
+        documentIds: insertedDocs.map((doc) => doc.id).filter(Boolean),
+      });
 
-      for (const doc of insertedDocs) {
-        const text = (doc.content_text ?? "").trim();
-        if (!text) continue;
-
-        // Idempotency: skip if chunks already exist for this doc_id
-        const { count: existingCount } = await adminDb
-          .from("legal_practice_kb_chunks")
-          .select("id", { count: "exact", head: true })
-          .eq("doc_id", doc.id);
-        if (existingCount && existingCount > 0) continue;
-
-        const chunks = splitIntoChunks(text, CHUNK_SIZE, CHUNK_OVERLAP);
-        if (chunks.length === 0) continue;
-
-        const chunkRows = chunks.map((c) => ({
-          doc_id: doc.id,
-          chunk_index: c.idx,
-          chunk_text: sanitizeString(c.text),
-          chunk_hash: computeChunkHash(c.text),
-          title: sanitizeString(doc.title),
-          source_anchor: null,
-          overlap_prev: 0,
-          rechunk_version: 'v1-legacy',
-        }));
-
-        const chunkBatchSize = 200;
-        for (let i = 0; i < chunkRows.length; i += chunkBatchSize) {
-          const batch = chunkRows.slice(i, i + chunkBatchSize);
-          const { error: chunkErr } = await adminDb
-            .from("legal_practice_kb_chunks")
-            .insert(batch);
-          if (chunkErr) {
-            console.error(`[bulk-import] job=${jobId} chunk_error doc=${doc.id}:`, chunkErr.message);
-          } else {
-            insertedChunks += batch.length;
-          }
-        }
-      }
-
-      console.log(`[bulk-import] job=${jobId} inserted=${insertedPractice} chunks=${insertedChunks} skipped=${skipped} errors=${errors.length}`);
+      console.log(`[bulk-import] job=${jobId} inserted=${insertedPractice} queued_chunk=${queued.chunk} skipped=${skipped} errors=${errors.length}`);
 
       return new Response(JSON.stringify({
         ok: true,
         inserted_practice: insertedPractice,
-        inserted_chunks: insertedChunks,
         skipped,
+        queued,
         errors: errors.slice(0, 20),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -881,7 +859,7 @@ serve(async (req) => {
     const { data: insertedDoc, error: insertError } = await adminDb
       .from("legal_practice_kb")
       .insert(rowToInsert)
-      .select()
+      .select("id, title, content_text, practice_category, court_type, outcome, court_name, case_number_anonymized, decision_date, applied_articles, key_violations, legal_reasoning_summary, is_active, is_anonymized, visibility, source_name")
       .single();
 
     if (insertError) {
@@ -889,10 +867,17 @@ serve(async (req) => {
       throw insertError;
     }
 
+    const queued = await queuePipelineJobs({
+      supabase: adminDb,
+      sourceTable: "legal_practice_kb",
+      documentIds: [insertedDoc.id],
+    });
+
     return new Response(JSON.stringify({
       success: true,
       document: insertedDoc,
       extracted: extractedData,
+      queued,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -2,11 +2,11 @@
  * practice-pipeline-orchestrator
  * 
  * Cron-triggered (every minute) orchestrator that drives the full pipeline:
- *   1. Chunking  → practice-chunk-worker
- *   2. Embedding → practice-embed-worker
- *   3. Enrichment → practice-ai-enrich-worker
+ *   1. Chunking  -> practice-chunk-worker
+ *   2. Enrichment -> practice-ai-enrich-worker
+ *   3. Embedding -> practice-embed-worker
  * 
- * Priority: chunk > embed > enrich.
+ * Priority: chunk > enrich > embed.
  * Auth: x-internal-key (INTERNAL_INGEST_KEY or CRON_WORKER_KEY).
  * 
  * Concurrency: Uses pg_try_advisory_lock to prevent overlapping runs.
@@ -130,17 +130,17 @@ serve(async (req) => {
     if (chunkResult.status === 200 && ((chunkResult.data?.picked as number) ?? 0) > 0) {
       stageTriggered = "chunk";
     } else {
-      // 2) Embed
-      const embedResult = await callWorker("practice-embed-worker");
-      results.embed = embedResult;
-      if (embedResult.status === 200 && ((embedResult.data?.picked as number) ?? 0) > 0) {
-        stageTriggered = "embed";
+      // 2) Enrich
+      const enrichResult = await callWorker("practice-ai-enrich-worker");
+      results.enrich = enrichResult;
+      if (enrichResult.status === 200 && ((enrichResult.data?.picked as number) ?? 0) > 0) {
+        stageTriggered = "enrich";
       } else {
-        // 3) Enrich
-        const enrichResult = await callWorker("practice-ai-enrich-worker");
-        results.enrich = enrichResult;
-        if (enrichResult.status === 200 && ((enrichResult.data?.picked as number) ?? 0) > 0) {
-          stageTriggered = "enrich";
+        // 3) Embed
+        const embedResult = await callWorker("practice-embed-worker");
+        results.embed = embedResult;
+        if (embedResult.status === 200 && ((embedResult.data?.picked as number) ?? 0) > 0) {
+          stageTriggered = "embed";
         }
       }
     }

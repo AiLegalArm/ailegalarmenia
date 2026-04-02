@@ -151,7 +151,7 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Embeddings (OpenAI only — always direct, no gateway) ──────────────────
   "generate-embeddings": {
-    model: "openai/text-embedding-3-large",
+    model: "openai/text-embedding-3-small",
     temperature: 0,
     max_tokens: 0,
     description: "Embeddings (OpenAI direct)",
