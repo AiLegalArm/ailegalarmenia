@@ -20,7 +20,7 @@ BEGIN
   
   _url := current_setting('app.settings.supabase_url', true);
   IF _url IS NULL OR _url = '' THEN
-    _url := 'https://ekvhhsemntnylaivqufs.supabase.co';
+    _url := 'https://dbrhbbaoeurjveconszd.supabase.co';
   END IF;
   
   PERFORM net.http_post(

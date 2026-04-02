@@ -256,7 +256,7 @@ BEGIN
   END IF;
   IF _key IS NULL OR _key = '' THEN RAISE WARNING '[invoke_pipeline_orchestrator] No key in vault'; RETURN; END IF;
   _url := current_setting('app.settings.supabase_url', true);
-  IF _url IS NULL OR _url = '' THEN _url := 'https://ekvhhsemntnylaivqufs.supabase.co'; END IF;
+  IF _url IS NULL OR _url = '' THEN _url := 'https://dbrhbbaoeurjveconszd.supabase.co'; END IF;
   PERFORM net.http_post(url := _url || '/functions/v1/practice-pipeline-orchestrator',
     headers := jsonb_build_object('Content-Type','application/json','x-internal-key',_key), body := '{}'::jsonb);
 END;
@@ -275,7 +275,7 @@ BEGIN
   END IF;
   IF _key IS NULL OR _key = '' THEN RAISE WARNING '[invoke_chunk_worker] No key in vault'; RETURN; END IF;
   _url := current_setting('app.settings.supabase_url', true);
-  IF _url IS NULL OR _url = '' THEN _url := 'https://ekvhhsemntnylaivqufs.supabase.co'; END IF;
+  IF _url IS NULL OR _url = '' THEN _url := 'https://dbrhbbaoeurjveconszd.supabase.co'; END IF;
   PERFORM net.http_post(url := _url || '/functions/v1/practice-chunk-worker',
     headers := jsonb_build_object('Content-Type','application/json','x-internal-key',_key), body := '{"concurrency_docs": 10}'::jsonb);
 END;

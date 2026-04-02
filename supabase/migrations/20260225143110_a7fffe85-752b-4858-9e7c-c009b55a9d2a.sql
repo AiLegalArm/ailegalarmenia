@@ -29,7 +29,7 @@ BEGIN
     RETURN;
   END IF;
   
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co';
   
   PERFORM net.http_post(
     url := _url || '/functions/v1/practice-chunk-worker',

@@ -42,7 +42,7 @@ Run the backfill endpoint as admin to populate chunks for existing documents:
 
 ```bash
 curl -X POST \
-  'https://nrmmgcgwriyrlbcpoqvk.supabase.co/functions/v1/kb-backfill-chunks' \
+  'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/kb-backfill-chunks' \
   -H 'Authorization: Bearer <ADMIN_JWT_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"dryRun": true}'
@@ -52,7 +52,7 @@ First run with `dryRun: true` to see what would be processed, then:
 
 ```bash
 curl -X POST \
-  'https://nrmmgcgwriyrlbcpoqvk.supabase.co/functions/v1/kb-backfill-chunks' \
+  'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/kb-backfill-chunks' \
   -H 'Authorization: Bearer <ADMIN_JWT_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"chunkSize": 8000}'

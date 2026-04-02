@@ -19,7 +19,7 @@ BEGIN
     RAISE EXCEPTION 'INTERNAL_INGEST_KEY not found in vault';
   END IF;
 
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/pipeline-tick';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/pipeline-tick';
 
   PERFORM net.http_post(
     url := _url,

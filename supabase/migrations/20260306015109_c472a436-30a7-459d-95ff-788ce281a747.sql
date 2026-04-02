@@ -20,7 +20,7 @@ BEGIN
     RETURN;
   END IF;
 
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-chunk-worker';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-chunk-worker';
 
   PERFORM net.http_post(
     url := _url,
@@ -55,7 +55,7 @@ BEGIN
     RETURN;
   END IF;
 
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-chunk-enqueue';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-chunk-enqueue';
 
   PERFORM net.http_post(
     url := _url,
@@ -93,7 +93,7 @@ BEGIN
     RETURN;
   END IF;
 
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-pipeline-orchestrator';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-pipeline-orchestrator';
 
   PERFORM net.http_post(
     url := _url,

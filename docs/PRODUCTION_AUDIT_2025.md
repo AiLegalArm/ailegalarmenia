@@ -29,7 +29,7 @@
 
 #### SEC-CRIT-2: PWA Workbox кэширует устаревший домен Supabase
 **Файл:** `vite.config.ts:50`  
-**Проблема:** `runtimeCaching` настроен на домен `ktnygkszihdganoqamhi.supabase.co`, который не соответствует текущему проекту (`nrmmgcgwriyrlbcpoqvk`).  
+**Проблема:** `runtimeCaching` настроен на домен `dbrhbbaoeurjveconszd.supabase.co`, который не соответствует текущему проекту (`dbrhbbaoeurjveconszd`).  
 **Риск:** Кэш не работает для текущего API, но потенциально может кэшировать stale-ответы при смене проекта.  
 **Рекомендация:** Обновить паттерн на текущий домен или использовать `import.meta.env.VITE_SUPABASE_URL`.
 

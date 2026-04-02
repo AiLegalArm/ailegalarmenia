@@ -20,7 +20,7 @@ BEGIN
   END IF;
   
   PERFORM net.http_post(
-    url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-chunk-worker',
+    url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-chunk-worker',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-internal-key', _key

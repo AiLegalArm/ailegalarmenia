@@ -5,7 +5,7 @@
 export function getSupabaseStorageKey(): string {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   
-  // Extract project ref from URL (e.g., "https://nrmmgcgwriyrlbcpoqvk.supabase.co")
+  // Extract project ref from URL (e.g., "https://dbrhbbaoeurjveconszd.supabase.co")
   const match = supabaseUrl.match(/https:\/\/([a-z0-9]+)\.supabase\.co/);
   const projectRef = match ? match[1] : 'default';
   

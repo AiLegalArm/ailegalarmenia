@@ -10,7 +10,7 @@ DECLARE
   _key text := 'KfkI8gHgXJpM4fFlcX7SuqDFl6jjTPMgApQkqZNIhi0dgc8N5Z';
 BEGIN
   PERFORM net.http_post(
-    url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-pipeline-orchestrator',
+    url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-pipeline-orchestrator',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-internal-key', _key

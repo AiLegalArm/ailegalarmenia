@@ -21,7 +21,7 @@ BEGIN
   END IF;
 
   -- Build URL from project ref (stable, never changes)
-  _url := 'https://ekvhhsemntnylaivqufs.supabase.co/functions/v1/practice-pipeline-orchestrator';
+  _url := 'https://dbrhbbaoeurjveconszd.supabase.co/functions/v1/practice-pipeline-orchestrator';
 
   PERFORM net.http_post(
     url := _url,
