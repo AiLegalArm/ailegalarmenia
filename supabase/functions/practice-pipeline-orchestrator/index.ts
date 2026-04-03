@@ -76,14 +76,18 @@ serve(async (req) => {
       });
     }
 
-    const callWorker = async (functionName: string, attempt = 0): Promise<WorkerResult> => {
+    const callWorker = async (
+      functionName: string,
+      payload: Record<string, unknown> = {},
+      attempt = 0,
+    ): Promise<WorkerResult> => {
       const url = `${supabaseUrl}/functions/v1/${functionName}`;
       const headers = buildInternalHeaders({ "x-request-id": pipelineRunId });
       try {
         const res = await fetchWithTimeout(url, {
           method: "POST",
           headers,
-          body: JSON.stringify({ concurrency_docs: 25, pipeline_run_id: pipelineRunId }),
+          body: JSON.stringify({ concurrency_docs: 25, pipeline_run_id: pipelineRunId, ...payload }),
         }, WORKER_TIMEOUT_MS);
 
         const rawText = await res.text();
@@ -95,7 +99,7 @@ serve(async (req) => {
           if (attempt < MAX_RETRIES) {
             console.log(`[pipeline-orchestrator] run=${pipelineRunId} retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
             await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-            return callWorker(functionName, attempt + 1);
+            return callWorker(functionName, payload, attempt + 1);
           }
           return { data: { picked: 0 }, status: res.status, error: errMsg };
         }
@@ -115,7 +119,7 @@ serve(async (req) => {
         if (!isTimeout && attempt < MAX_RETRIES) {
           console.log(`[pipeline-orchestrator] run=${pipelineRunId} retrying ${functionName} in ${RETRY_DELAY_MS}ms...`);
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-          return callWorker(functionName, attempt + 1);
+            return callWorker(functionName, payload, attempt + 1);
         }
         return { data: { picked: 0 }, status: 0, error: msg };
       }
@@ -124,23 +128,38 @@ serve(async (req) => {
     const results: Record<string, WorkerResult> = {};
     let stageTriggered = "idle";
 
-    // 1) Chunk
+    // 1) Chunk always runs first because it unblocks downstream work.
     const chunkResult = await callWorker("practice-chunk-worker");
     results.chunk = chunkResult;
     if (chunkResult.status === 200 && ((chunkResult.data?.picked as number) ?? 0) > 0) {
       stageTriggered = "chunk";
     } else {
-      // 2) Enrich
-      const enrichResult = await callWorker("practice-ai-enrich-worker");
+      // 2) Run legal practice enrichment and knowledge base embeddings side-by-side.
+      // This prevents the large enrich backlog from starving KB vectorization.
+      const [enrichResult, embedKbResult] = await Promise.all([
+        callWorker("practice-ai-enrich-worker"),
+        callWorker("practice-embed-worker", { source_table: "knowledge_base" }),
+      ]);
       results.enrich = enrichResult;
-      if (enrichResult.status === 200 && ((enrichResult.data?.picked as number) ?? 0) > 0) {
+      results.embed_kb = embedKbResult;
+
+      const enrichPicked = (enrichResult.data?.picked as number) ?? 0;
+      const embedKbPicked = (embedKbResult.data?.picked as number) ?? 0;
+
+      if (enrichResult.status === 200 && enrichPicked > 0 && embedKbResult.status === 200 && embedKbPicked > 0) {
+        stageTriggered = "enrich+embed_kb";
+      } else if (enrichResult.status === 200 && enrichPicked > 0) {
         stageTriggered = "enrich";
-      } else {
-        // 3) Embed
-        const embedResult = await callWorker("practice-embed-worker");
-        results.embed = embedResult;
-        if (embedResult.status === 200 && ((embedResult.data?.picked as number) ?? 0) > 0) {
-          stageTriggered = "embed";
+      } else if (embedKbResult.status === 200 && embedKbPicked > 0) {
+        stageTriggered = "embed_kb";
+      }
+
+      // 3) Only embed legal_practice_kb after enrichment backlog is drained.
+      if (!(enrichResult.status === 200 && enrichPicked > 0)) {
+        const embedPracticeResult = await callWorker("practice-embed-worker", { source_table: "legal_practice_kb" });
+        results.embed_practice = embedPracticeResult;
+        if (embedPracticeResult.status === 200 && ((embedPracticeResult.data?.picked as number) ?? 0) > 0) {
+          stageTriggered = stageTriggered === "embed_kb" ? "embed_kb+embed_practice" : "embed_practice";
         }
       }
     }

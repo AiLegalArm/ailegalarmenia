@@ -147,6 +147,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+    const sourceFilter = body.source_table || null;
     const batchSize = Math.min(Number(body.concurrency_docs) || DEFAULT_BATCH, 50);
 
     const supabase = createClient(
@@ -159,6 +160,7 @@ serve(async (req) => {
       p_job_type: "embed",
       p_limit: batchSize,
       p_lease_minutes: 10,
+      p_source_table: sourceFilter,
     });
 
     if (claimErr) {
@@ -214,7 +216,7 @@ serve(async (req) => {
           throw new Error(`Table "${src}" is not an allowed embedding target. Allowed: ${Object.keys(EMBEDDING_TARGETS).join(", ")}`);
         }
 
-        console.log(`[embed-worker] target: table=${src} column=${target.column} dim=${target.dim} doc=${job.document_id}`);
+        console.log(`[embed-worker] target: scope=${sourceFilter || "all"} table=${src} column=${target.column} dim=${target.dim} doc=${job.document_id}`);
 
         const isKB = src === "knowledge_base";
         const selectFields = isKB ? KB_SELECT_FIELDS : DOC_SELECT_FIELDS;
