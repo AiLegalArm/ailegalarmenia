@@ -69,7 +69,7 @@ const AdminPanel = () => {
     );
   }
 
-  if (!user || !isAdmin) {
+  if (!user || !verifiedAdmin) {
     return null;
   }
 
