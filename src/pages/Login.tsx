@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { getSupabaseStorageKey } from '@/lib/supabase-storage-key';
-import { getLoginEmailCandidates, normalizeUsername } from '@/lib/auth';
+import { getSignInCandidates } from '@/lib/auth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { motion } from 'framer-motion';
 
@@ -50,11 +50,24 @@ const Login = () => {
   const handleLogin = async (values: LoginValues) => {
     setIsLoading(true);
     try {
-      const rawUsername = values.username.trim().replace(/^@+/, '');
-      const username = normalizeUsername(values.username);
-      const internalEmail = `${username}@app.internal`;
-      
-      await signIn(internalEmail, values.password);
+      const candidates = getSignInCandidates(values.username);
+      let signedIn = false;
+      let lastError: unknown;
+
+      for (const candidate of candidates) {
+        try {
+          await signIn(candidate, values.password);
+          signedIn = true;
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!signedIn) {
+        throw lastError instanceof Error ? lastError : new Error('Login failed');
+      }
       
       if (!rememberMe) {
         const sessionKey = getSupabaseStorageKey();
