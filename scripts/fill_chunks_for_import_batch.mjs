@@ -136,6 +136,7 @@ for (const doc of docs || []) {
   const rows = buildChunkRows(doc, result, sourceTable)
   const chunksTable = sourceTable === 'knowledge_base' ? 'knowledge_base_chunks' : 'legal_practice_kb_chunks'
   const fkColumn = sourceTable === 'knowledge_base' ? 'kb_id' : 'doc_id'
+  const onConflict = sourceTable === 'knowledge_base' ? 'kb_id,chunk_index' : 'doc_id,chunk_index'
 
   await apiFetch(`${baseUrl}/rest/v1/${chunksTable}?${fkColumn}=eq.${doc.id}`, {
     method: 'DELETE',
@@ -143,9 +144,9 @@ for (const doc of docs || []) {
   })
 
   for (const batch of chunked(rows, 50)) {
-    await apiFetch(`${baseUrl}/rest/v1/${chunksTable}`, {
+    await apiFetch(`${baseUrl}/rest/v1/${chunksTable}?on_conflict=${encodeURIComponent(onConflict)}`, {
       method: 'POST',
-      headers: { ...headers, Prefer: 'return=minimal' },
+      headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(batch),
     })
     chunkRows += batch.length

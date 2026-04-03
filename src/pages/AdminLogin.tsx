@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
-import { getLoginEmailCandidates } from '@/lib/auth';
+import { getSignInCandidates } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -85,10 +85,23 @@ const AdminLogin = () => {
     const currentAttempt = loginAttemptRef.current;
 
     try {
-      const username = values.username.trim().replace(/^@+/, '').toLowerCase();
-      const internalEmail = `${username}@app.internal`;
-      
-      const result = await signIn(internalEmail, values.password);
+      const candidates = getSignInCandidates(values.username);
+      let result: Awaited<ReturnType<typeof signIn>> | null = null;
+      let lastError: unknown;
+
+      for (const candidate of candidates) {
+        try {
+          result = await signIn(candidate, values.password);
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!result) {
+        throw lastError instanceof Error ? lastError : new Error('Login failed');
+      }
       
       if (result.user && currentAttempt === loginAttemptRef.current) {
         setLoginSuccess(true);

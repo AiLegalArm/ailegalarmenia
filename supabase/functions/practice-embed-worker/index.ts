@@ -22,7 +22,7 @@ async function sha256Hex(text: string): Promise<string> {
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_DIMENSIONS = 1536;
-const MAX_CHARS_PER_TEXT = 6_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
+const MAX_CHARS_PER_TEXT = 4_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
 const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 2; // reduced until token-overflow stabilised
 
@@ -280,14 +280,24 @@ serve(async (req) => {
         errors.push(`${job.document_id}: ${errMsg}`);
         processedFailed++;
 
-        // Fatal OpenAI error → mark job failed, stop processing
-        if (e instanceof FatalOpenAIError) {
-          console.error(`[embed-worker] fatal: status=${e.status} doc=${job.document_id}`);
+        // Fatal OpenAI error (auth) → mark job failed, stop processing batch
+        if (e instanceof FatalOpenAIError && (e.status === 401 || e.status === 403)) {
+          console.error(`[embed-worker] fatal auth: status=${e.status} doc=${job.document_id}`);
           await supabase.from("practice_chunk_jobs").update({
             status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
             lease_expires_at: null,
           }).eq("id", job.id);
           fatalHit = true;
+          continue;
+        }
+
+        // Fatal OpenAI token error -> just dead letter this job, don't abort batch
+        if (e instanceof FatalOpenAIError && e.status === 400) {
+          console.error(`[embed-worker] fatal token limit: doc=${job.document_id}`);
+          await supabase.from("practice_chunk_jobs").update({
+            status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
+            lease_expires_at: null,
+          }).eq("id", job.id);
           continue;
         }
 

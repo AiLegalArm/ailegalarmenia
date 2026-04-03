@@ -19,6 +19,17 @@ export function getLoginEmailCandidates(rawUsername: string): string[] {
   return [...new Set(candidates)];
 }
 
+export function getSignInCandidates(rawIdentifier: string): string[] {
+  const trimmed = rawIdentifier.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.includes('@')) {
+    return [...new Set([trimmed, trimmed.toLowerCase()])];
+  }
+
+  return getLoginEmailCandidates(trimmed);
+}
+
 export function getAuthRedirectPath(requiredRole?: 'admin' | 'lawyer' | 'client' | 'auditor'): string {
   return requiredRole === 'admin' ? '/admin/login' : '/login';
 }

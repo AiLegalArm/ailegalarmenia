@@ -182,7 +182,7 @@ function extractDispositive(doc: EmbeddingDoc): string {
 
 // ── Body text construction by doc type ──────────────────────────────────────
 
-const MAX_BODY_CHARS = 4500; // leaves ~1500 chars for structured header fields within 6000 total
+const MAX_BODY_CHARS = 3000; // leaves ~1000 chars for structured header fields within 4000 total
 
 function buildBodyText(doc: EmbeddingDoc, docType: DocType): string {
   const raw = doc.content_text || "";
@@ -352,5 +352,5 @@ export function buildChunkEmbeddingText(
   parts.push(normaliseWhitespace(chunk.chunk_text));
 
   const raw = parts.join(" ");
-  return redactPII(truncate(raw, 6000));
+  return redactPII(truncate(raw, 4000));
 }
