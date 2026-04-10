@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import ssl
 import time
@@ -84,8 +85,39 @@ def normalize_item(item: dict[str, Any], index: int, batch_ref: str) -> dict[str
     )
 
 
+def ensure_content_hash(row: dict[str, Any]) -> dict[str, Any]:
+    if row.get("content_hash"):
+        return row
+    content = str(row.get("content_text") or "")
+    row["content_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return row
+
+
 def chunked(seq: list[Any], size: int) -> list[list[Any]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
+
+
+def fetch_existing_values(
+    base_url: str, headers: dict[str, str], column: str, candidates: list[str]
+) -> set[str]:
+    values: set[str] = set()
+    unique_candidates = sorted({candidate for candidate in candidates if candidate})
+
+    for candidate_batch in chunked(unique_candidates, 100):
+        filter_values = ",".join(
+            json.dumps(candidate, ensure_ascii=False) for candidate in candidate_batch
+        )
+        url = (
+            f"{base_url}/rest/v1/knowledge_base?select={parse.quote(column)}"
+            f"&{column}={parse.quote(f'in.({filter_values})')}"
+        )
+        rows = api_request(url, "GET", headers)
+        for row in rows or []:
+            value = row.get(column)
+            if isinstance(value, str) and value:
+                values.add(value)
+
+    return values
 
 
 def build_job_rows(document_ids: list[str]) -> list[dict[str, Any]]:
@@ -129,7 +161,8 @@ def main() -> int:
 
     items = load_items(Path(args.items_json))
     rows = [
-        normalize_item(item, index, args.batch_ref) for index, item in enumerate(items)
+        ensure_content_hash(normalize_item(item, index, args.batch_ref))
+        for index, item in enumerate(items)
     ]
     rows = [row for row in rows if row["content_text"]]
 
@@ -138,6 +171,56 @@ def main() -> int:
         "Authorization": f"Bearer {args.service_role_key}",
         "Prefer": "return=representation",
     }
+
+    read_headers = {k: v for k, v in headers.items() if k != "Prefer"}
+    existing_source_urls = fetch_existing_values(
+        args.base_url,
+        read_headers,
+        "source_url",
+        [str(row.get("source_url") or "") for row in rows],
+    )
+    existing_content_hashes = fetch_existing_values(
+        args.base_url,
+        read_headers,
+        "content_hash",
+        [str(row.get("content_hash") or "") for row in rows],
+    )
+
+    deduped_rows: list[dict[str, Any]] = []
+    seen_source_urls: set[str] = set()
+    seen_content_hashes: set[str] = set()
+    skipped_existing_source_url = 0
+    skipped_existing_content_hash = 0
+    skipped_batch_source_url = 0
+    skipped_batch_content_hash = 0
+
+    for row in rows:
+        source_url = row.get("source_url")
+        content_hash = row.get("content_hash")
+
+        if isinstance(source_url, str) and source_url:
+            if source_url in existing_source_urls:
+                skipped_existing_source_url += 1
+                continue
+            if source_url in seen_source_urls:
+                skipped_batch_source_url += 1
+                continue
+
+        if isinstance(content_hash, str) and content_hash:
+            if content_hash in existing_content_hashes:
+                skipped_existing_content_hash += 1
+                continue
+            if content_hash in seen_content_hashes:
+                skipped_batch_content_hash += 1
+                continue
+
+        deduped_rows.append(row)
+        if isinstance(source_url, str) and source_url:
+            seen_source_urls.add(source_url)
+        if isinstance(content_hash, str) and content_hash:
+            seen_content_hashes.add(content_hash)
+
+    rows = deduped_rows
 
     inserted_ids: list[str] = []
     insert_url = f"{args.base_url}/rest/v1/knowledge_base?select={parse.quote('id')}"
@@ -163,6 +246,10 @@ def main() -> int:
                 "input_items": len(items),
                 "attempted_new_rows": len(rows),
                 "inserted": len(inserted_ids),
+                "skipped_existing_source_url": skipped_existing_source_url,
+                "skipped_existing_content_hash": skipped_existing_content_hash,
+                "skipped_batch_source_url": skipped_batch_source_url,
+                "skipped_batch_content_hash": skipped_batch_content_hash,
             },
             ensure_ascii=False,
             indent=2,
