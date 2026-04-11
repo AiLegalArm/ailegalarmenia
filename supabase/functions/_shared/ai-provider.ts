@@ -24,6 +24,7 @@ const OPENAI_ONLY_FUNCTIONS = new Set([
   "practice-embed-worker",
   "practice-ai-enrich-worker",
   "legal-practice-enrich",
+  "vector-search-rerank",
 ]);
 
 /**

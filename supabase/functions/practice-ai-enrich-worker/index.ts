@@ -37,9 +37,10 @@ CRITICAL: Output ONLY valid JSON. No markdown, no code fences, no explanation.`;
 
 async function callOpenAI(text: string): Promise<Record<string, unknown>> {
   // Resolve model config from centralized MODEL_MAP (using own function name as key)
-  const cfg = getModelConfig("practice-ai-enrich-worker");
+  const functionName = "practice-ai-enrich-worker";
+  const cfg = getModelConfig(functionName);
   const provider = await getAIProvider();
-  const endpoint = resolveEndpoint(provider, cfg.model);
+  const endpoint = resolveEndpoint(provider, cfg.model, functionName);
 
   const input = text.trim().substring(0, MAX_TEXT_CHARS);
   if (!input) throw new Error("Empty content");
@@ -118,8 +119,6 @@ function mapEnrichmentToColumns(enrichment: Record<string, unknown>): Record<str
   const normsCited = enrichment.norms_cited as Array<Record<string, unknown>> | undefined;
   const issues = enrichment.issues as Array<Record<string, unknown>> | undefined;
   const precedentUnits = enrichment.precedent_units as Array<Record<string, unknown>> | undefined;
-  const quality = enrichment.quality as Record<string, unknown> | undefined;
-  const warnings = enrichment.extraction_warnings as string[] | undefined;
 
   if (doc) {
     if (doc.case_number && typeof doc.case_number === "string") update.case_number_anonymized = doc.case_number;
@@ -131,21 +130,20 @@ function mapEnrichmentToColumns(enrichment: Record<string, unknown>): Record<str
 
   if (Array.isArray(normsCited) && normsCited.length > 0) {
     const grouped: Record<string, Array<Record<string, unknown>>> = {};
-    const echrArticles: string[] = [];
     for (const norm of normsCited) {
       const instrument = String(norm.instrument ?? "");
       const article = norm.article ? String(norm.article) : null;
-      if (norm.system === "ECHR" && article) echrArticles.push(article);
       if (!grouped[instrument]) grouped[instrument] = [];
       grouped[instrument].push({ article: article ?? "", part: norm.part || "", point: norm.point || "" });
     }
     update.applied_articles = { sources: Object.entries(grouped).map(([act, articles]) => ({ act, articles })) };
-    if (echrArticles.length > 0) update.echr_article = [...new Set(echrArticles)];
-    update.interpreted_norms = { norms_cited: normsCited };
   }
 
   if (Array.isArray(issues) && issues.length > 0) {
-    update.keywords = issues.map(i => String(i.issue_id ?? "")).filter(Boolean);
+    update.key_violations = issues
+      .map(i => String(i.issue_id ?? i.label ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 20);
   }
 
   // Legal reasoning summary: prefer dedicated field from AI, fallback to precedent_units
@@ -155,10 +153,6 @@ function mapEnrichmentToColumns(enrichment: Record<string, unknown>): Record<str
   }
 
   if (Array.isArray(precedentUnits) && precedentUnits.length > 0) {
-    const holdings = precedentUnits.filter(u => u.unit_type === "holding" || u.unit_type === "ratio")
-      .map(u => String(u.rule_text_hy || u.rule_text_ru || "")).filter(Boolean);
-    if (holdings.length > 0) update.ratio_decidendi = holdings.join("\n\n");
-
     // Only use precedent_units as fallback if AI didn't provide dedicated summary
     if (!update.legal_reasoning_summary) {
       const allRules = precedentUnits.map(u => {
@@ -168,17 +162,7 @@ function mapEnrichmentToColumns(enrichment: Record<string, unknown>): Record<str
       if (allRules.length > 0) update.legal_reasoning_summary = allRules.join("\n");
     }
 
-    update.key_paragraphs = { precedent_units: precedentUnits };
   }
-
-  update.decision_map = {
-    enrichment_version: "v2_pipeline_openai",
-    enriched_at: new Date().toISOString(),
-    quality: quality ?? null,
-    extraction_warnings: warnings ?? [],
-    doc_meta: doc ?? null,
-    issues: issues ?? [],
-  };
 
   return update;
 }

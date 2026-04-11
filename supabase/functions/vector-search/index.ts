@@ -33,9 +33,6 @@ serve(async (req) => {
     const MAX_RESULTS = Number(Deno.env.get("MAX_RESULTS")) || 60;
     const query = rawQuery.length > MAX_QUERY_LENGTH ? rawQuery.substring(0, MAX_QUERY_LENGTH) : rawQuery;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -62,7 +59,7 @@ serve(async (req) => {
         kbCandidateCount = candidates.length;
         if (candidates.length > 0) {
           try {
-            results.kb = await rerankWithAI(query, candidates, safeLimit, LOVABLE_API_KEY);
+            results.kb = await rerankWithAI(query, candidates, safeLimit);
             rerankUsed = true;
           } catch (rerankErr) {
             rerankOk = false;
@@ -88,7 +85,7 @@ serve(async (req) => {
         practiceCandidateCount = candidates.length;
         if (candidates.length > 0) {
           try {
-            results.practice = await rerankWithAI(query, candidates, safeLimit, LOVABLE_API_KEY);
+            results.practice = await rerankWithAI(query, candidates, safeLimit);
             rerankUsed = true;
           } catch (rerankErr) {
             rerankOk = false;
@@ -374,7 +371,6 @@ async function rerankWithAI(
   query: string,
   candidates: Array<{ id: string; title: string; content_text: string }>,
   topK: number,
-  apiKey: string
 ): Promise<unknown[]> {
   if (candidates.length <= topK) return candidates;
 

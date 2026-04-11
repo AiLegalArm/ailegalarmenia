@@ -100,17 +100,14 @@ async function getEmbeddings(texts: string[], dimensions = EMBEDDING_DIMENSIONS)
     .map((d: { embedding: number[] }) => d.embedding);
 }
 
-/** Select fields needed for buildEmbeddingText */
+/** Select fields needed for buildEmbeddingText from current legal_practice_kb schema */
 const DOC_SELECT_FIELDS = [
   "id", "title", "content_text", "description",
   "court_type", "court_name", "source_name",
   "decision_date", "case_number_anonymized", "echr_case_id",
-  "practice_category", "keywords", "key_violations", "violation_type",
-  "applied_articles", "interpreted_norms", "decision_map", "key_paragraphs",
-  "ratio_decidendi", "legal_principle", "echr_principle_formula",
-  "legal_reasoning_summary", "outcome", "echr_article",
-  "facts_hy", "judgment_hy", "procedural_aspect",
-  "application_scope", "limitations_of_application",
+  "practice_category", "key_violations",
+  "applied_articles", "legal_reasoning_summary", "outcome",
+  "facts_hy", "judgment_hy",
   "content_hash", "embedding",
 ].join(", ");
 
@@ -135,10 +132,10 @@ serve(async (req) => {
   if (!Deno.env.get("OPENAI_API_KEY")) {
     console.error("[embed-worker] OPENAI_API_KEY missing");
     return new Response(
-      JSON.stringify({
-        error: "OPENAI_API_KEY not configured",
-        hint: "Add OPENAI_API_KEY secret in Lovable Cloud → Secrets",
-      }),
+        JSON.stringify({
+          error: "OPENAI_API_KEY not configured",
+          hint: "Add OPENAI_API_KEY to Supabase Edge Function secrets",
+        }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

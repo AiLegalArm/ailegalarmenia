@@ -63,7 +63,7 @@ async function processJob(
 
   const selectFields = src === "knowledge_base"
     ? "id, title, content_text, category"
-    : "id, title, content_text, key_paragraphs, court_type, practice_category, case_number_anonymized, decision_date";
+    : "id, title, content_text, court_type, practice_category, case_number_anonymized, decision_date";
 
   // 1. Fetch source document
   const { data: doc, error: docErr } = await supabase

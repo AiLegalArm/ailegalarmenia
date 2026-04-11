@@ -105,16 +105,16 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
     description: "ECHR translate (Claude 3.5 Sonnet)",
   },
   "legal-practice-enrich": {
-    model: "anthropic/claude-3.5-sonnet",
+    model: "openai/gpt-4.1-mini",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Enrich practice (Claude 3.5 Sonnet)",
+    description: "Enrich practice (OpenAI GPT-4.1 mini)",
   },
   "vector-search-rerank": {
-    model: "google/gemini-2.5-flash",
+    model: "openai/gpt-4.1-mini",
     temperature: 0.1,
     max_tokens: 1000,
-    description: "Rerank (Gemini Flash)",
+    description: "Rerank (OpenAI GPT-4.1 mini)",
   },
 
   // ── Bypass-only utilities ─────────────────────────────────────────────────
@@ -167,10 +167,10 @@ export const MODEL_MAP: Record<string, ModelConfig> = {
 
   // ── Worker aliases ────────────────────────────────────────────────────────
   "practice-ai-enrich-worker": {
-    model: "anthropic/claude-3.5-sonnet",
+    model: "openai/gpt-4.1-mini",
     temperature: 0.2,
     max_tokens: 16000,
-    description: "Enrich practice worker (Claude 3.5 Sonnet)",
+    description: "Enrich practice worker (OpenAI GPT-4.1 mini)",
   },
 
   // ── Map-Reduce summarizer ─────────────────────────────────────────────────

@@ -98,7 +98,7 @@ def normalize_item(item: dict[str, Any], index: int, batch_ref: str) -> dict[str
             "key_violations": item.get("key_violations")
             if isinstance(item.get("key_violations"), list)
             else [],
-            "description": item.get("description"),
+            "description": item.get("description") or item.get("title") or f"Untitled_{index}",
         }
     )
 

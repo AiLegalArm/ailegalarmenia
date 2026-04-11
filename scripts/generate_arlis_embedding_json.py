@@ -38,14 +38,17 @@ CASE_NUMBER_RE = re.compile(
 )
 
 LEGAL_MARKERS = {
-    "constitutional": re.compile(r"ՍԱՀՄԱՆԱԴՐԱԿԱՆ ԴԱՏԱՐԱՆ", re.I),
+    "constitutional": re.compile(r"Հ[ՀՀ]?\s*ՍԱՀՄԱՆԱԴՐԱԿԱՆ ԴԱՏԱՐԱՆ", re.I),
     "echr": re.compile(
-        r"ՄԱՐԴՈՒ ԻՐԱՎՈՒՆՔՆԵՐԻ ԵՎՐՈՊԱԿԱՆ ԴԱՏԱՐԱՆ|ԵՎՐՈՊԱԿԱՆ ԴԱՏԱՐԱՆ|ECHR", re.I
+        r"ՄԱՐԴՈՒ ԻՐԱՎՈՒՆՔՆԵՐԻ ԵՎՐՈՊԱԿԱՆ ԴԱՏԱՐԱՆԻ ՎՃԻՌ|ԵՎՐՈՊԱԿԱՆ ԴԱՏԱՐԱՆԻ ՎՃԻՌ", re.I
     ),
-    "cassation": re.compile(r"ՎՃՌԱԲԵԿ", re.I),
-    "appeal": re.compile(r"ՎԵՐԱՔՆՆԻՉ", re.I),
-    "first_instance": re.compile(r"ԸՆԴՀԱՆՈՒՐ ԻՐԱՎԱՍՈՒԹՅԱՆ ԴԱՏԱՐԱՆ|ԱՌԱՋԻՆ ԱՏՅԱՆԻ", re.I),
+    "cassation": re.compile(r"Հ[ՀՀ]?\s*ՎՃՌԱԲԵԿ ԴԱՏԱՐԱՆԻ ՈՐՈՇՈՒՄ", re.I),
 }
+STRICT_PRACTICE_NEGATIVE_RE = re.compile(
+    r"ԿԱՌԱՎԱՐՈՒԹՅԱՆ ՈՐՈՇՈՒՄ|ՎԱՐՉԱՊԵՏԻ ՈՐՈՇՈՒՄ|ՔԱՂԱՔԱՊԵՏԻ ՈՐՈՇՈՒՄ|ՆԱԽԱՐԱՐԻ ՀՐԱՄԱՆ|"
+    r"ԲԱՐՁՐԱԳՈՒՅՆ ԴԱՏԱԿԱՆ ԽՈՐՀՐԴԻ ՈՐՈՇՈՒՄ|ԱԶԳԱՅԻՆ ԺՈՂՈՎԻ ՈՐՈՇՈՒՄ|ՆԱԽԱԳԱՀԻ ՀՐԱՄԱՆԱԳԻՐ",
+    re.I,
+)
 
 INTERNATIONAL_RE = re.compile(
     r"ՀԱՄԱՁԱՅՆԱԳԻՐ|ԿՈՆՎԵՆՑԻԱ|ԱՐՁԱՆԱԳՐՈՒԹՅՈՒՆ|ԽԱՐՏԻԱ|ԴԱՇՆԱԳԻՐ", re.I
@@ -54,6 +57,20 @@ NON_PRACTICE_JUDICIAL_ACT_RE = re.compile(
     r"ԲԱՐՁՐԱԳՈՒՅՆ ԴԱՏԱԿԱՆ ԽՈՐՀՐԴԻ ՈՐՈՇՈՒՄ|ԱՐԴԱՐԱԴԱՏՈՒԹՅԱՆ ԽՈՐՀՐԴԻ ՈՐՈՇՈՒՄ|ԴԱՏԱՎՈՐԻ ԹԵԿՆԱԾՈՒ ԸՆՏՐԵԼՈՒ ՄԱՍԻՆ|ՆԱԽԱԳԱՀ ԸՆՏՐԵԼՈՒ ՄԱՍԻՆ|ԿԱՐԳԱՊԱՀԱԿԱՆ ՊԱՏԱՍԽԱՆԱՏՎՈՒԹՅԱՆ|ԿԱՐԳԱՊԱՀԱԿԱՆ ՊԱՏԱՍԽԱՆԱ",
     re.I,
 )
+TITLE_MARKER_RE = re.compile(
+    r"ՈՐՈՇՈՒՄ|ՕՐԵՆՔ|ՀՐԱՄԱՆ|ՀԱՄԱՁԱՅՆԱԳԻՐ|ԿՈՆՎԵՆՑԻԱ|ԱՐՁԱՆԱԳՐՈՒԹՅՈՒՆ|ԿԱՐԳ|ԿԱՆՈՆԱԴՐՈՒԹՅՈՒՆ",
+    re.I,
+)
+TITLE_SKIP_RE = re.compile(
+    r"^(ՀԱՄԱՐԸ|ՏԵՍԱԿԸ|ՏԻՊԸ|ԿԱՐԳԱՎԻՃԱԿԸ|ՍԿԶԲՆԱՂԲՅՈՒՐԸ|ԸՆԴՈՒՆՄԱՆ ՎԱՅՐԸ|ԸՆԴՈՒՆՈՂ ՄԱՐՄԻՆԸ|"
+    r"ԸՆԴՈՒՆՄԱՆ ԱՄՍԱԹԻՎԸ|ՍՏՈՐԱԳՐՈՂ ՄԱՐՄԻՆԸ|ՍՏՈՐԱԳՐՄԱՆ ԱՄՍԱԹԻՎԸ|ՎԱՎԵՐԱՑՆՈՂ ՄԱՐՄԻՆԸ|"
+    r"ՎԱՎԵՐԱՑՄԱՆ ԱՄՍԱԹԻՎԸ|ՈՒԺԻ ՄԵՋ ՄՏՆԵԼՈՒ ԱՄՍԱԹԻՎԸ|ՈՒԺԸ ԿՈՐՑՆԵԼՈՒ ԱՄՍԱԹԻՎԸ|"
+    r"ԿԱՊԵՐ ԱՅԼ ՓԱՍՏԱԹՂԹԵՐԻ ՀԵՏ|ՓՈՓՈԽՈՂՆԵՐ ԵՎ ԻՆԿՈՐՊՈՐԱՑԻԱՆԵՐ|ԾԱՆՈՒՑՈՒՄ|ՀԱՅԱՍՏԱՆԻ ՀԱՆՐԱՊԵՏՈՒԹՅԱՆ|"
+    r"Ո Ր Ո Շ ՈՒ Մ|Օ Ր Ե Ն Ք Ը|Հ Ր Ա Մ Ա Ն|N\s*[0-9Ա-ՖA-Z/-]+|[0-9./-]+)$",
+    re.I,
+)
+TITLE_HEADER_ONLY_RE = re.compile(r"^(Ո Ր Ո Շ ՈՒ Մ(?: Ը)?|Օ Ր Ե Ն Ք Ը|Հ Ր Ա Մ Ա Ն)$", re.I)
+TITLE_NOISE_RE = re.compile(r"Անցումային դրույթ|անցումային դրույթ|^Հոդված\s*\d+\.?$", re.I)
 
 KB_CATEGORY_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("constitution", re.compile(r"\bՍԱՀՄԱՆԱԴՐՈՒԹՅՈՒՆ\b", re.I)),
@@ -209,29 +226,68 @@ def infer_date(text: str) -> str | None:
 
 
 def infer_title(file_name: str, text: str) -> str:
-    for line in text.splitlines()[:16]:
-        if (
-            "ՈՐՈՇՈՒՄ" in line
-            or "ՕՐԵՆՔ" in line
-            or "ՀԱՄԱՁԱՅՆԱԳԻՐ" in line
-            or "ԿՈՆՎԵՆՑԻԱ" in line
-        ):
-            return line.strip()
+    lines = [re.sub(r"\s+", " ", line).strip(" -\t") for line in text.splitlines()[:80]]
+    lines = [line for line in lines if line]
+
+    def collect_title(start: int) -> str | None:
+        parts: list[str] = []
+        for line in lines[start : start + 4]:
+            if TITLE_SKIP_RE.match(line) or TITLE_NOISE_RE.search(line):
+                if parts:
+                    break
+                continue
+            if len(line) < 8:
+                if parts:
+                    break
+                continue
+            parts.append(line)
+            if len(" ".join(parts)) >= 140:
+                break
+        if not parts:
+            return None
+        return " ".join(parts)
+
+    for i, line in enumerate(lines):
+        if TITLE_SKIP_RE.match(line):
+            continue
+        if TITLE_HEADER_ONLY_RE.match(line):
+            collected = collect_title(i + 1)
+            if collected:
+                return collected
+        if TITLE_MARKER_RE.search(line) and len(line) > 24:
+            collected = collect_title(i)
+            if collected:
+                return collected
+
+    for line in lines:
+        if TITLE_SKIP_RE.match(line) or TITLE_NOISE_RE.search(line):
+            continue
+        if len(line) > 30 and line.upper() == line:
+            return line
+
     return file_name.removesuffix(".pdf").lstrip("_").strip()
 
 
 def detect_legal_practice(file_name: str, text: str) -> tuple[str, str] | None:
-    haystack = f"{file_name}\n{text[:5000]}"
-    if NON_PRACTICE_JUDICIAL_ACT_RE.search(file_name):
+    title_zone = "\n".join(line.strip() for line in text.splitlines()[:80] if line.strip())
+    header_haystack = f"{infer_title(file_name, text)}\n{title_zone[:4000]}"
+
+    if NON_PRACTICE_JUDICIAL_ACT_RE.search(header_haystack):
         return None
-    for court_type, pattern in LEGAL_MARKERS.items():
-        if pattern.search(haystack):
-            if court_type == "constitutional":
-                return court_type, "constitutional"
-            if court_type == "echr":
-                return court_type, "echr"
-            category = infer_practice_category(haystack)
-            return court_type, category
+    if STRICT_PRACTICE_NEGATIVE_RE.search(header_haystack):
+        return None
+
+    if LEGAL_MARKERS["echr"].search(header_haystack):
+        return "echr", "echr"
+
+    if LEGAL_MARKERS["constitutional"].search(header_haystack):
+        return "constitutional", "constitutional"
+
+    if LEGAL_MARKERS["cassation"].search(header_haystack):
+        category = infer_practice_category(header_haystack)
+        if category != "unknown":
+            return "cassation", category
+
     return None
 
 
@@ -288,8 +344,6 @@ def infer_court_name(court_type: str) -> str | None:
         "constitutional": "ՀՀ Սահմանադրական դատարան",
         "echr": "Մարդու իրավունքների եվրոպական դատարան",
         "cassation": "ՀՀ վճռաբեկ դատարան",
-        "appeal": "ՀՀ վերաքննիչ դատարան",
-        "first_instance": "ՀՀ առաջին ատյանի դատարան",
     }
     return mapping.get(court_type)
 
@@ -539,7 +593,7 @@ def prepare_pdf(pdf_path: Path) -> PreparedRow:
             "content_text": text,
             "source_name": "ARLIS",
             "source_url": source_url,
-            "description": pdf_path.name.removesuffix(".pdf").lstrip("_").strip(),
+            "description": title,
             "is_active": True,
             "is_anonymized": False,
             "visibility": "admin_only",
