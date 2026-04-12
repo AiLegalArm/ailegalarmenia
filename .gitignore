@@ -33,3 +33,16 @@ supabase/.temp/
 
 # Large data files (embeddings, benchmarks, practice data)
 data/
+
+# Local pipelines outputs / caches (should not be committed)
+output/
+temp/
+
+# Python caches
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local sqlite caches
+*.sqlite
