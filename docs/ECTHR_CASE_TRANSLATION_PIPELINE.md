@@ -44,7 +44,7 @@ Build enriched JSONL (example uses the provided external `out.jsonl`):
 py scripts/build_ailegalarmenia_case_jsonl.py `
   "c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out.jsonl" `
   --backend ollama `
-  --ollama-model "translategemma:4b" `
+  --ollama-model "gemma4:e4b" `
   --limit 1 `
   --validate
 ```
@@ -52,6 +52,27 @@ py scripts/build_ailegalarmenia_case_jsonl.py `
 Outputs:
 - `output/ailegalarmenia_cases_hy_enriched.jsonl`
 - `output/ailegalarmenia_translation_report.json`
+
+## Load Into Supabase (legal_practice_kb, Armenian-only)
+
+This loader translates selectively and **stores only Armenian text** in `legal_practice_kb`:
+- `title` and `content_text` are Armenian (used for search/embeddings)
+- `judgment_hy`, `facts_hy`, `summary_hy` filled
+- full structured Armenian `out.jsonl`-shape is stored in `decision_map` JSONB
+- upsert is idempotent via `echr_case_id` (derived from `itemid` first)
+
+```powershell
+$env:SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+
+py -X utf8 scripts/translate_and_load_echr_to_supabase.py `
+  "c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out.jsonl" `
+  --backend ollama `
+  --ollama-model "gemma4:e4b" `
+  --skip-existing `
+  --import-ref "echr-hy-bulk" `
+  --limit 10
+```
 
 ## Notes
 

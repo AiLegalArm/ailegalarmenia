@@ -171,11 +171,11 @@ serve(async (req) => {
       );
     }
 
-    const tooLongIdx = texts.findIndex((t) => t.length > MAX_CHARS_PER_TEXT);
+    const tooLongIdx = texts.findIndex((t) => t.length > 50_000);
     if (tooLongIdx !== -1) {
       return new Response(
         JSON.stringify({
-          error: `texts[${tooLongIdx}] exceeds max ${MAX_CHARS_PER_TEXT} chars`,
+          error: `texts[${tooLongIdx}] exceeds max 50000 chars`,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );

@@ -116,8 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--ollama-model",
-        default="translategemma:4b",
-        help="Ollama model (default: translategemma:4b).",
+        default="gemma4:e4b",
+        help="Ollama model (default: gemma4:e4b).",
     )
     parser.add_argument(
         "--ollama-timeout-s",

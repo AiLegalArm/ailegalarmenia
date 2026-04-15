@@ -1,19 +1,35 @@
 /**
  * practice-embed-worker — Lease-based embedding worker
- * 
- * Claims up to 25 "embed" jobs from practice_chunk_jobs,
- * generates embeddings via OpenAI API directly, updates the source table.
- * 
- * Auth: x-internal-key only (called by orchestrator).
+ *
+ * Claims "embed" jobs from practice_chunk_jobs, generates embeddings via the
+ * centralized embeddings service (embeddings-generate), and updates the source table.
+ *
+ * Critical requirement: always populate `embedding_legacy_768` (dim=768) for any
+ * record that participates in vector search. Never silently succeed without it.
+ *
+ * Auth: x-internal-key only (called by orchestrator/backfill scripts).
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { handleCors, validateInternalRequest } from "../_shared/edge-security.ts";
-import { buildEmbeddingText, type EmbeddingDoc } from "../_shared/build-embedding-text.ts";
+import {
+  buildChunkEmbeddingText,
+  buildEmbeddingText,
+  type EmbeddingDoc,
+} from "../_shared/build-embedding-text.ts";
+import { buildEmbeddingFingerprintText, generateEmbedding, vectorToString } from "../_shared/embeddings.ts";
+import {
+  assertVectorDim,
+  hasValidStoredVector,
+  mergeJsonObject,
+  PRIMARY_EMBEDDING_DIM,
+  LEGACY_EMBEDDING_DIM,
+} from "../_shared/embedding-legacy.ts";
+import { assertLegacyWillExist, computeEmbeddingPlan } from "../_shared/embedding-idempotency.ts";
 import { encode as hexEncode } from "https://deno.land/std@0.168.0/encoding/hex.ts";
 
-// ─── SHA-256 hash for idempotency ──────────────────────────────────────────
+// SHA-256 hash for idempotency
 async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest("SHA-256", data);
@@ -21,102 +37,102 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const EMBEDDING_DIMENSIONS = 1536;
 const MAX_CHARS_PER_TEXT = 4_000; // worst-case Armenian ≈ 1 char/token; model limit 8191
-const MAX_RETRIES = 5;
 const DEFAULT_BATCH = 2; // reduced until token-overflow stabilised
 
-// Target table -> column mapping for text-embedding-3-small.
-const EMBEDDING_TARGETS: Record<string, { column: string; dim: number }> = {
-  knowledge_base: { column: "embedding", dim: 1536 },
-  legal_practice_kb: { column: "embedding", dim: 1536 },
-  legal_chunks: { column: "embedding", dim: 1536 },
+type EmbeddingTarget = {
+  kind: "doc" | "chunk";
+  primaryColumn: "embedding";
+  primaryDim: number;
+  legacyColumn: "embedding_legacy_768";
+  legacyDim: number;
 };
 
-// ─── Custom error for fatal OpenAI responses (401/403) ─────────────────────
-class FatalOpenAIError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-    this.name = "FatalOpenAIError";
-  }
+const EMBEDDING_TARGETS: Record<string, EmbeddingTarget> = {
+  knowledge_base: {
+    kind: "doc",
+    primaryColumn: "embedding",
+    primaryDim: PRIMARY_EMBEDDING_DIM,
+    legacyColumn: "embedding_legacy_768",
+    legacyDim: LEGACY_EMBEDDING_DIM,
+  },
+  legal_practice_kb: {
+    kind: "doc",
+    primaryColumn: "embedding",
+    primaryDim: PRIMARY_EMBEDDING_DIM,
+    legacyColumn: "embedding_legacy_768",
+    legacyDim: LEGACY_EMBEDDING_DIM,
+  },
+  legal_chunks: {
+    kind: "chunk",
+    primaryColumn: "embedding",
+    primaryDim: PRIMARY_EMBEDDING_DIM,
+    legacyColumn: "embedding_legacy_768",
+    legacyDim: LEGACY_EMBEDDING_DIM,
+  },
+};
+
+async function getEmbedding(text: string, dimensions: number): Promise<number[]> {
+  const vector = await generateEmbedding(text, EMBEDDING_MODEL, dimensions);
+  assertVectorDim(vector, dimensions, `generated_embedding_dim_${dimensions}`);
+  return vector;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs = 1000): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try { return await fn(); } catch (err) {
-      // Never retry fatal auth errors
-      if (err instanceof FatalOpenAIError) throw err;
-      lastError = err;
-      if (attempt < retries) {
-        const wait = delayMs * Math.pow(2, attempt);
-        console.log(`[embed-worker] retry attempt=${attempt + 1}/${retries} wait=${wait}ms`);
-        await new Promise(r => setTimeout(r, wait));
-      }
-    }
-  }
-  throw lastError;
-}
-
-async function getEmbeddings(texts: string[], dimensions = EMBEDDING_DIMENSIONS): Promise<number[][]> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new FatalOpenAIError(500, "OPENAI_API_KEY not configured");
-
-  const truncated = texts.map(t => t.substring(0, MAX_CHARS_PER_TEXT));
-
-  const response = await withRetry(async () => {
-    const res = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: EMBEDDING_MODEL,
-        input: truncated,
-        dimensions,
-      }),
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      // 401/403 = fatal, do not retry
-      if (res.status === 401 || res.status === 403) {
-        throw new FatalOpenAIError(res.status, `OpenAI auth error ${res.status}: ${errText.substring(0, 200)}`);
-      }
-      // 400 with token-limit message → fatal, do not retry
-      if (res.status === 400 && /token|too long|maximum context/i.test(errText)) {
-        throw new FatalOpenAIError(400, `OpenAI token limit exceeded: ${errText.substring(0, 200)}`);
-      }
-      // 429/5xx = retryable
-      throw new Error(`OpenAI embeddings error ${res.status}: ${errText.substring(0, 200)}`);
-    }
-    return res;
-  });
-
-  const json = await response.json();
-  if (!json.data || !Array.isArray(json.data)) throw new Error("Unexpected embeddings response");
-
-  return [...json.data].sort((a: { index: number }, b: { index: number }) => a.index - b.index)
-    .map((d: { embedding: number[] }) => d.embedding);
-}
-
-/** Select fields needed for buildEmbeddingText from current legal_practice_kb schema */
-const DOC_SELECT_FIELDS = [
-  "id", "title", "content_text", "description",
-  "court_type", "court_name", "source_name",
-  "decision_date", "case_number_anonymized", "echr_case_id",
-  "practice_category", "key_violations",
-  "applied_articles", "legal_reasoning_summary", "outcome",
-  "facts_hy", "judgment_hy",
-  "content_hash", "embedding",
+const PRACTICE_SELECT_FIELDS = [
+  "id",
+  "title",
+  "content_text",
+  "description",
+  "court_type",
+  "court_name",
+  "source_name",
+  "decision_date",
+  "case_number_anonymized",
+  "echr_case_id",
+  "practice_category",
+  "key_violations",
+  "applied_articles",
+  "legal_reasoning_summary",
+  "outcome",
+  "facts_hy",
+  "judgment_hy",
+  "content_hash",
+  "embedding",
+  "embedding_legacy_768",
 ].join(", ");
 
-/** Minimal select for knowledge_base (fewer fields) */
 const KB_SELECT_FIELDS = [
-  "id", "title", "content_text", "category", "article_number",
-  "source_name", "version_date",
-  "content_hash", "embedding",
+  "id",
+  "title",
+  "content_text",
+  "category",
+  "article_number",
+  "source_name",
+  "version_date",
+  "content_hash",
+  "embedding",
+  "embedding_legacy_768",
 ].join(", ");
+
+const CHUNK_SELECT_FIELDS = [
+  "id",
+  "doc_id",
+  "chunk_text",
+  "chunk_type",
+  "label",
+  "chunk_hash",
+  "metadata",
+  "embedding",
+  "embedding_legacy_768",
+].join(", ");
+
+function isFatalEmbeddingConfigError(message: string): boolean {
+  return /OPENAI_API_KEY not configured|No auth credentials available/i.test(message);
+}
+
+function isTokenLimitError(message: string): boolean {
+  return /token|too long|maximum context/i.test(message);
+}
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -128,14 +144,14 @@ serve(async (req) => {
   const authErr = validateInternalRequest(req, corsHeaders);
   if (authErr) return authErr;
 
-  // ── Fail-fast: no API key ────────────────────────────────────────────────
+  // Fail-fast: embeddings-generate requires OPENAI_API_KEY
   if (!Deno.env.get("OPENAI_API_KEY")) {
     console.error("[embed-worker] OPENAI_API_KEY missing");
     return new Response(
-        JSON.stringify({
-          error: "OPENAI_API_KEY not configured",
-          hint: "Add OPENAI_API_KEY to Supabase Edge Function secrets",
-        }),
+      JSON.stringify({
+        error: "OPENAI_API_KEY not configured",
+        hint: "Add OPENAI_API_KEY to Supabase Edge Function secrets",
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
@@ -162,22 +178,29 @@ serve(async (req) => {
 
     if (claimErr) {
       const rawMsg = claimErr.message || "Unknown claim error";
-      const isTransient = rawMsg.includes("Connection timed out") || rawMsg.includes("<!DOCTYPE") || rawMsg.includes("522") || rawMsg.includes("503");
+      const isTransient = rawMsg.includes("Connection timed out") ||
+        rawMsg.includes("<!DOCTYPE") ||
+        rawMsg.includes("522") ||
+        rawMsg.includes("503");
       const shortMsg = rawMsg.length > 300 ? rawMsg.substring(0, 200) + "... [truncated]" : rawMsg;
       console.error(`[embed-worker] claim error (transient=${isTransient}): ${shortMsg}`);
-      
       if (isTransient) {
         return new Response(JSON.stringify({ picked: 0, error: "transient_db_error", detail: shortMsg }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       return new Response(JSON.stringify({ error: shortMsg }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const jobs = (claimedRows || []) as Array<{
-      id: string; document_id: string; source_table: string; attempts: number; max_attempts: number;
+      id: string;
+      document_id: string;
+      source_table: string;
+      attempts: number;
+      max_attempts: number;
     }>;
 
     if (jobs.length === 0) {
@@ -189,14 +212,15 @@ serve(async (req) => {
     let processedOk = 0;
     let processedFailed = 0;
     let skippedIdempotent = 0;
+    let invalidDimensions = 0;
     const errors: string[] = [];
     let fatalHit = false;
 
     for (const job of jobs) {
-      // If we hit a fatal OpenAI error, mark remaining jobs as failed too
       if (fatalHit) {
         await supabase.from("practice_chunk_jobs").update({
-          status: "failed", last_error: "Aborted: fatal OpenAI auth error in batch",
+          status: "failed",
+          last_error: "Aborted: fatal embeddings configuration error in batch",
           lease_expires_at: null,
         }).eq("id", job.id);
         processedFailed++;
@@ -204,111 +228,219 @@ serve(async (req) => {
       }
 
       const attempt = (job.attempts || 0) + 1;
+
       try {
         const src = job.source_table || "knowledge_base";
-
-        // Guard: only known parent tables allowed
         const target = EMBEDDING_TARGETS[src];
         if (!target) {
-          throw new Error(`Table "${src}" is not an allowed embedding target. Allowed: ${Object.keys(EMBEDDING_TARGETS).join(", ")}`);
+          throw new Error(
+            `Table "${src}" is not an allowed embedding target. Allowed: ${Object.keys(EMBEDDING_TARGETS).join(", ")}`,
+          );
         }
 
-        console.log(`[embed-worker] target: scope=${sourceFilter || "all"} table=${src} column=${target.column} dim=${target.dim} doc=${job.document_id}`);
+        const selectFields = src === "knowledge_base"
+          ? KB_SELECT_FIELDS
+          : (src === "legal_chunks" ? CHUNK_SELECT_FIELDS : PRACTICE_SELECT_FIELDS);
 
-        const isKB = src === "knowledge_base";
-        const selectFields = isKB ? KB_SELECT_FIELDS : DOC_SELECT_FIELDS;
-
-        const { data: doc, error: docErr } = await supabase
+        const { data: row, error: rowErr } = await supabase
           .from(src)
           .select(selectFields)
           .eq("id", job.document_id)
           .single();
 
-        if (docErr || !doc) throw new Error(docErr?.message || "Document not found");
+        if (rowErr || !row) throw new Error(rowErr?.message || "Record not found");
 
-        // Use unified embedding text builder
-        const embeddingText = buildEmbeddingText(doc as EmbeddingDoc);
-        const hash = await sha256Hex(embeddingText);
+        // Build embedding text from FINAL stored retrieval content (content_text / chunk_text)
+        let embeddingText: string;
+        let stableHash: string;
+        let storedHash: string | null = null;
+        let chunkMeta: Record<string, unknown> | null = null;
 
-        // Idempotency: skip if content unchanged and embedding already exists
-        const hasEmbedding = doc.embedding !== null && doc.embedding !== undefined;
-        if (doc.content_hash === hash && hasEmbedding) {
-          // Mark job done without calling OpenAI
+        if (target.kind === "chunk") {
+          const docId = (row.doc_id as string | null) || null;
+          const parentTitle = await (async () => {
+            if (!docId) return undefined;
+            const { data: parent } = await supabase
+              .from("legal_documents")
+              .select("title")
+              .eq("id", docId)
+              .maybeSingle();
+            return (parent?.title as string | undefined) || undefined;
+          })();
+
+          embeddingText = buildChunkEmbeddingText({
+            chunk_text: String(row.chunk_text || ""),
+            chunk_type: (row.chunk_type as string | undefined) || undefined,
+            label: (row.label as string | undefined) || undefined,
+          }, parentTitle);
+
+          stableHash = await sha256Hex(await buildEmbeddingFingerprintText(embeddingText));
+          chunkMeta = (row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata))
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+          storedHash = (chunkMeta.embedding_text_hash as string | undefined) || null;
+        } else {
+          embeddingText = buildEmbeddingText(row as EmbeddingDoc);
+          stableHash = await sha256Hex(await buildEmbeddingFingerprintText(embeddingText));
+          storedHash = (row.content_hash as string | null) || null;
+        }
+
+        const hasPrimary = hasValidStoredVector(row.embedding, target.primaryDim);
+        const hasLegacy = hasValidStoredVector(row.embedding_legacy_768, target.legacyDim);
+
+        // Malformed stored vectors count as invalid dimensions and must be repaired.
+        if (row.embedding != null && !hasPrimary) invalidDimensions++;
+        if (row.embedding_legacy_768 != null && !hasLegacy) invalidDimensions++;
+
+        const plan = computeEmbeddingPlan({
+          storedHash,
+          computedHash: stableHash,
+          hasPrimary,
+          hasLegacy,
+        });
+
+        if (plan.skip) {
+          // Job success without regeneration
           await supabase.from("practice_chunk_jobs").update({
-            status: "done", attempts: attempt, completed_at: new Date().toISOString(), last_error: null,
+            status: "done",
+            attempts: attempt,
+            completed_at: new Date().toISOString(),
+            last_error: null,
           }).eq("id", job.id);
-          // Ensure embedding_status is success
-          await supabase.from(src).update({
-            embedding_status: "success",
-            embedding_last_attempt: new Date().toISOString(),
-            embedding_error: null,
-          }).eq("id", job.document_id);
+
+          if (target.kind === "doc") {
+            await supabase.from(src).update({
+              embedding_status: "success",
+              embedding_last_attempt: new Date().toISOString(),
+              embedding_error: null,
+            }).eq("id", job.document_id);
+          } else {
+            const merged = mergeJsonObject(chunkMeta, {
+              embedding_status: "success",
+              embedding_last_attempt: new Date().toISOString(),
+              embedding_error: null,
+              embedding_text_hash: stableHash,
+            });
+            await supabase.from(src).update({ metadata: merged }).eq("id", job.document_id);
+          }
+
           skippedIdempotent++;
-          console.log(`[embed-worker] skip (idempotent): doc=${job.document_id} table=${src}`);
           continue;
         }
 
-        const [embedding] = await getEmbeddings([embeddingText], target.dim);
-        const vectorStr = `[${embedding.join(",")}]`;
+        // Generate only what is needed (idempotent + partial repair):
+        const needPrimary = plan.needPrimary;
+        const needLegacy = plan.needLegacy;
 
-        const { error: updateErr } = await supabase
-          .from(src)
-          .update({
-            [target.column]: vectorStr,
+        const primaryVec = needPrimary ? await getEmbedding(embeddingText, target.primaryDim) : null;
+        const legacyVec = needLegacy ? await getEmbedding(embeddingText, target.legacyDim) : null;
+
+        // Safety: do not mark success unless legacy_768 exists (valid pre-existing or generated).
+        assertLegacyWillExist({ hasLegacy, legacyGenerated: !!legacyVec });
+
+        const updatePayload: Record<string, unknown> = {};
+        if (primaryVec) updatePayload[target.primaryColumn] = vectorToString(primaryVec);
+        if (legacyVec) updatePayload[target.legacyColumn] = vectorToString(legacyVec);
+
+        if (target.kind === "doc") {
+          updatePayload.embedding_status = "success";
+          updatePayload.embedding_attempts = attempt;
+          updatePayload.embedding_last_attempt = new Date().toISOString();
+          updatePayload.embedding_error = null;
+          updatePayload.content_hash = stableHash;
+        } else {
+          const merged = mergeJsonObject(chunkMeta, {
             embedding_status: "success",
             embedding_attempts: attempt,
             embedding_last_attempt: new Date().toISOString(),
             embedding_error: null,
-            content_hash: hash,
-          })
-          .eq("id", job.document_id);
+            embedding_text_hash: stableHash,
+          });
+          updatePayload.metadata = merged;
+        }
 
+        const { error: updateErr } = await supabase.from(src).update(updatePayload).eq("id", job.document_id);
         if (updateErr) throw new Error(`Update failed: ${updateErr.message}`);
 
-        // Mark job done
         await supabase.from("practice_chunk_jobs").update({
-          status: "done", attempts: attempt, completed_at: new Date().toISOString(), last_error: null,
+          status: "done",
+          attempts: attempt,
+          completed_at: new Date().toISOString(),
+          last_error: null,
         }).eq("id", job.id);
 
         processedOk++;
-        console.log(`[embed-worker] ok: doc=${job.document_id} table=${src} dim=${target.dim} attempt=${attempt}`);
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : "Unknown error";
         errors.push(`${job.document_id}: ${errMsg}`);
         processedFailed++;
 
-        // Fatal OpenAI error (auth) → mark job failed, stop processing batch
-        if (e instanceof FatalOpenAIError && (e.status === 401 || e.status === 403)) {
-          console.error(`[embed-worker] fatal auth: status=${e.status} doc=${job.document_id}`);
+        // Mark source record as failed/unembedded (fail-closed)
+        try {
+          const src = job.source_table || "knowledge_base";
+          if (src === "legal_chunks") {
+            const { data: chunk } = await supabase
+              .from("legal_chunks")
+              .select("metadata")
+              .eq("id", job.document_id)
+              .maybeSingle();
+            const merged = mergeJsonObject(chunk?.metadata, {
+              embedding_status: "failed",
+              embedding_attempts: (job.attempts || 0) + 1,
+              embedding_last_attempt: new Date().toISOString(),
+              embedding_error: errMsg.substring(0, 500),
+            });
+            await supabase.from("legal_chunks").update({ metadata: merged }).eq("id", job.document_id);
+          } else if (src === "knowledge_base" || src === "legal_practice_kb") {
+            await supabase.from(src).update({
+              embedding_status: "failed",
+              embedding_attempts: (job.attempts || 0) + 1,
+              embedding_last_attempt: new Date().toISOString(),
+              embedding_error: errMsg.substring(0, 500),
+            }).eq("id", job.document_id);
+          }
+        } catch (markErr) {
+          console.error("[embed-worker] failed to mark record as failed:", markErr instanceof Error ? markErr.message : String(markErr));
+        }
+
+        // Fatal config error → dead-letter this job and abort batch
+        if (isFatalEmbeddingConfigError(errMsg)) {
           await supabase.from("practice_chunk_jobs").update({
-            status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
+            status: "dead_letter",
+            attempts: attempt,
+            last_error: errMsg.substring(0, 500),
             lease_expires_at: null,
           }).eq("id", job.id);
           fatalHit = true;
           continue;
         }
 
-        // Fatal OpenAI token error -> just dead letter this job, don't abort batch
-        if (e instanceof FatalOpenAIError && e.status === 400) {
-          console.error(`[embed-worker] fatal token limit: doc=${job.document_id}`);
+        // Token limit → dead letter this job only
+        if (isTokenLimitError(errMsg)) {
           await supabase.from("practice_chunk_jobs").update({
-            status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
+            status: "dead_letter",
+            attempts: attempt,
+            last_error: errMsg.substring(0, 500),
             lease_expires_at: null,
           }).eq("id", job.id);
           continue;
         }
 
-        console.error(`[embed-worker] failed: doc=${job.document_id} attempt=${attempt}`);
-
+        // Retry with backoff unless maxed out
         if (attempt >= (job.max_attempts || 5)) {
           await supabase.from("practice_chunk_jobs").update({
-            status: "dead_letter", attempts: attempt, last_error: errMsg.substring(0, 500),
+            status: "dead_letter",
+            attempts: attempt,
+            last_error: errMsg.substring(0, 500),
             lease_expires_at: null,
           }).eq("id", job.id);
         } else {
           const backoffMinutes = attempt * 2;
           await supabase.from("practice_chunk_jobs").update({
-            status: "pending", attempts: attempt, started_at: null, lease_expires_at: null,
+            status: "pending",
+            attempts: attempt,
+            started_at: null,
+            lease_expires_at: null,
             last_error: errMsg.substring(0, 500),
             next_run_at: new Date(Date.now() + backoffMinutes * 60000).toISOString(),
           }).eq("id", job.id);
@@ -316,7 +448,6 @@ serve(async (req) => {
       }
     }
 
-    // Count remaining
     const { count: remaining } = await supabase
       .from("practice_chunk_jobs")
       .select("id", { count: "exact", head: true })
@@ -325,12 +456,18 @@ serve(async (req) => {
       .lt("attempts", 5);
 
     const duration = Date.now() - startTime;
-    console.log(`[embed-worker] done: picked=${jobs.length} ok=${processedOk} skipped=${skippedIdempotent} failed=${processedFailed} remaining=${remaining} duration=${duration}ms fatal=${fatalHit}`);
+    console.log(
+      `[embed-worker] done picked=${jobs.length} ok=${processedOk} skipped=${skippedIdempotent} failed=${processedFailed} invalid_dims=${invalidDimensions} remaining=${remaining} duration=${duration}ms fatal=${fatalHit}`,
+    );
 
     return new Response(JSON.stringify({
-      picked: jobs.length, processed_ok: processedOk, skipped_idempotent: skippedIdempotent,
+      picked: jobs.length,
+      processed_ok: processedOk,
+      skipped_idempotent: skippedIdempotent,
       processed_failed: processedFailed,
-      pending_remaining: remaining || 0, duration_ms: duration,
+      invalid_dimensions: invalidDimensions,
+      pending_remaining: remaining || 0,
+      duration_ms: duration,
       fatal: fatalHit || undefined,
       errors: errors.length > 0 ? errors : undefined,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -338,7 +475,8 @@ serve(async (req) => {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[embed-worker] fatal:", msg);
     return new Response(JSON.stringify({ error: msg }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

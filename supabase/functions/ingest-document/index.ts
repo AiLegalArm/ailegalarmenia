@@ -175,6 +175,8 @@ serve(async (req) => {
 
     // ── Step 6: Insert chunks ───────────────────────────────────
     const chunkRows = chunks.map((c) => ({
+      // Provide ids client-side so we can enqueue embedding jobs deterministically.
+      id: crypto.randomUUID(),
       doc_id: docId,
       doc_type: document.doc_type,
       chunk_index: c.chunk_index,
@@ -222,6 +224,52 @@ serve(async (req) => {
     }
 
     // ── Step 7: Trigger table screenshot processing (async) ─────
+    // Step 6b: Enqueue embedding jobs for the inserted chunks (primary + legacy_768).
+    // Fail-closed: if we cannot enqueue embed jobs, ingestion fails (chunks would be unsearchable).
+    try {
+      const embedJobs = chunkRows.map((r) => ({
+        document_id: r.id,
+        source_table: "legal_chunks",
+        job_type: "embed",
+        status: "pending",
+        attempts: 0,
+        last_error: null,
+        started_at: null,
+        completed_at: null,
+      }));
+
+      const JOB_BATCH = 500;
+      for (let i = 0; i < embedJobs.length; i += JOB_BATCH) {
+        const batch = embedJobs.slice(i, i + JOB_BATCH);
+        const { error: jobErr } = await supabase
+          .from("practice_chunk_jobs")
+          .upsert(batch, {
+            onConflict: "document_id,source_table,job_type",
+            ignoreDuplicates: true,
+          });
+        if (jobErr) throw jobErr;
+      }
+
+      // Best-effort kick of embed worker for legal_chunks
+      callInternalFunction(
+        `${supabaseUrl}/functions/v1/practice-embed-worker`,
+        { source_table: "legal_chunks", concurrency_docs: 25 },
+      ).catch((e) => {
+        console.error("[ingest-document] Failed to trigger practice-embed-worker:", e instanceof Error ? e.message : String(e));
+      });
+    } catch (enqueueErr) {
+      const msg = enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+      console.error(JSON.stringify({ ts: new Date().toISOString(), lvl: "error", fn: "ingest-document", msg: `Failed to enqueue embed jobs: ${msg}` }));
+      await supabase.rpc("log_error", {
+        _error_type: "ingest",
+        _error_message: `Failed to enqueue embed jobs: ${msg}`,
+        _error_details: JSON.stringify({ fileName, docId }),
+      }).catch(() => {});
+      // Cleanup: delete the document (CASCADE removes chunks) so we don't leave unsearchable partial state.
+      await supabase.from("legal_documents").delete().eq("id", docId);
+      return json({ error: "Failed to enqueue embedding jobs", details: msg }, 500);
+    }
+
     const hasTableChunks = chunkRows.some(c => c.chunk_type === "table");
     if (hasTableChunks) {
       callInternalFunction(

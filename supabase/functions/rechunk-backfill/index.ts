@@ -223,6 +223,7 @@ serve(async (req) => {
 
             if (source === "legal_documents") {
               const rows = result.chunks.map((c) => ({
+                id: crypto.randomUUID(),
                 doc_id: doc.doc_id,
                 doc_type: docType,
                 chunk_index: c.chunk_index,
@@ -247,6 +248,30 @@ serve(async (req) => {
                 const batch = rows.slice(i, i + BATCH_SIZE);
                 const { error: insertErr } = await supabase.from("legal_chunks").insert(batch);
                 if (insertErr) throw new Error(`Insert failed (batch ${i}): ${insertErr.message}`);
+              }
+
+              // Enqueue embedding jobs for new chunks (primary + legacy_768)
+              const embedJobs = rows.map((r) => ({
+                document_id: r.id,
+                source_table: "legal_chunks",
+                job_type: "embed",
+                status: "pending",
+                attempts: 0,
+                last_error: null,
+                started_at: null,
+                completed_at: null,
+              }));
+
+              const JOB_BATCH = 500;
+              for (let i = 0; i < embedJobs.length; i += JOB_BATCH) {
+                const batch = embedJobs.slice(i, i + JOB_BATCH);
+                const { error: jobErr } = await supabase
+                  .from("practice_chunk_jobs")
+                  .upsert(batch, {
+                    onConflict: "document_id,source_table,job_type",
+                    ignoreDuplicates: true,
+                  });
+                if (jobErr) throw new Error(`Enqueue embed jobs failed: ${jobErr.message}`);
               }
             } else {
               const rows = result.chunks.map((c) => ({

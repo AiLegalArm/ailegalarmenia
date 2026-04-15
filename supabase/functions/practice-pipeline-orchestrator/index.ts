@@ -136,22 +136,31 @@ serve(async (req) => {
     } else {
       // 2) Run legal practice enrichment and knowledge base embeddings side-by-side.
       // This prevents the large enrich backlog from starving KB vectorization.
-      const [enrichResult, embedKbResult] = await Promise.all([
+      const [enrichResult, embedKbResult, embedChunksResult] = await Promise.all([
         callWorker("practice-ai-enrich-worker"),
         callWorker("practice-embed-worker", { source_table: "knowledge_base" }),
+        callWorker("practice-embed-worker", { source_table: "legal_chunks" }),
       ]);
       results.enrich = enrichResult;
       results.embed_kb = embedKbResult;
+      results.embed_chunks = embedChunksResult;
 
       const enrichPicked = (enrichResult.data?.picked as number) ?? 0;
       const embedKbPicked = (embedKbResult.data?.picked as number) ?? 0;
+      const embedChunksPicked = (embedChunksResult.data?.picked as number) ?? 0;
 
-      if (enrichResult.status === 200 && enrichPicked > 0 && embedKbResult.status === 200 && embedKbPicked > 0) {
-        stageTriggered = "enrich+embed_kb";
+      if (
+        enrichResult.status === 200 && enrichPicked > 0 &&
+        embedKbResult.status === 200 && embedKbPicked > 0 &&
+        embedChunksResult.status === 200 && embedChunksPicked > 0
+      ) {
+        stageTriggered = "enrich+embed_kb+embed_chunks";
       } else if (enrichResult.status === 200 && enrichPicked > 0) {
         stageTriggered = "enrich";
       } else if (embedKbResult.status === 200 && embedKbPicked > 0) {
         stageTriggered = "embed_kb";
+      } else if (embedChunksResult.status === 200 && embedChunksPicked > 0) {
+        stageTriggered = "embed_chunks";
       }
 
       // 3) Only embed legal_practice_kb after enrichment backlog is drained.

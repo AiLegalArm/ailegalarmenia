@@ -94,7 +94,8 @@ LEGAL_TRANSLATION_SYSTEM_PROMPT_TEMPLATE = (
     "- do not summarize,\n"
     "- do not omit any sentence,\n"
     "- preserve paragraph numbers, article numbers, case citations, dates, and formatting,\n"
-    "- if names or official references appear, preserve them where appropriate,\n"
+    "- DO NOT translate or transliterate personal names (judges, applicants, representatives); keep them EXACTLY as written,\n"
+    "- keep official titles/identifiers exactly as written when they are part of a citation/reference,\n"
     "- output Armenian only,\n"
     "- return only the translated text."
 )
@@ -292,4 +293,3 @@ class OllamaTranslator:
         self.stats.translated += 1
         # Re-join with double newlines (matches primary chunking strategy).
         return "\n\n".join(translated_chunks) if len(translated_chunks) > 1 else translated_chunks[0]
-
