@@ -393,7 +393,9 @@ serve(async (req) => {
           record_id: caseId || null,
           details: { function: "ai-analyze", role },
         });
-      } catch { /* silent */ }
+      } catch (err) {
+        console.error("[ai-analyze] audit_log insert failed:", err);
+      }
 
       if (strictTemporal) {
         return new Response(

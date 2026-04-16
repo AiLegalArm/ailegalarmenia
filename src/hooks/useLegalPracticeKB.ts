@@ -128,7 +128,9 @@ export function useLegalPracticeKB() {
                 articles: (s.articles || []).map((a: { article: string }) => a.article),
               }));
             }
-          } catch { /* ignore */ }
+          } catch (err) {
+            console.warn("[useLegalPracticeKB] applied_articles parse error:", err);
+          }
 
           edgeDocs.push({
             id: row.id,

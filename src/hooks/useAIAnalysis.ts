@@ -431,7 +431,8 @@ export function useAIAnalysis(): UseAIAnalysisReturn {
             body: JSON.stringify(body),
             signal: controller.signal,
           });
-        } catch {
+        } catch (err) {
+          console.error("[useAIAnalysis] fetch failed:", err);
           clearTimeout(timeoutId);
           toast.error(t("analysis_failed"));
           setCurrentRole(null);

@@ -103,6 +103,20 @@ serve(async (req) => {
       return jsonRes({ error: "Unauthorized" }, 401);
     }
 
+    // === Rate limiting ===
+    const supabaseServiceUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const serviceClient = createClient(supabaseServiceUrl, supabaseServiceRoleKey);
+    const { checkRateLimits } = await import("../_shared/rate-limiter.ts");
+    const rateCheck = await checkRateLimits(serviceClient, userData.user.id, "kb-search");
+    if (!rateCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: rateCheck.reason, message: rateCheck.message }),
+        { status: rateCheck.status || 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    // === End rate limiting ===
+
     // === Method check ===
     if (req.method !== "POST") {
       return jsonRes({ error: "Method not allowed" }, 405);

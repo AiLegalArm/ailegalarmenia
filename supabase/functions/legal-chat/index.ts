@@ -301,7 +301,9 @@ serve(async (req) => {
           table_name: "cases",
           details: { function: "legal-chat" },
         });
-      } catch { /* silent */ }
+      } catch (err) {
+        console.error("[legal-chat] audit_log insert failed:", err);
+      }
 
       if (strictTemporal) {
         return new Response(

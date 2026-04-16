@@ -179,7 +179,7 @@ async function backfillTable(supabase: ReturnType<typeof createClient>, table: T
     if (!rows || rows.length === 0) break;
 
     // For legal_chunks, batch fetch parent titles (to match embed-worker input)
-    let titleByDocId: Record<string, string> = {};
+    const titleByDocId: Record<string, string> = {};
     if (table === "legal_chunks") {
       const docIds = [...new Set(rows.map((r) => r.doc_id as string).filter(Boolean))];
       if (docIds.length > 0) {

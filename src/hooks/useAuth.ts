@@ -146,7 +146,8 @@ export function useAuth(): UseAuthReturn {
         return false;
       }
       return data === true;
-    } catch {
+    } catch (err) {
+      console.error("[useAuth] isAdmin check failed:", err);
       return false;
     }
   }, [user]);
