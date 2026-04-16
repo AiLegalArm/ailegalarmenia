@@ -47,6 +47,21 @@ const chunkerBuild = spawnSync(
   { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 20, shell: true },
 )
 
+function runWithRetry(cmd, args, opts, maxRetries = 3) {
+  let attempt = 0;
+  let lastResult = null;
+  while (attempt < maxRetries) {
+    attempt++;
+    const result = spawnSync(cmd, args, opts);
+    if (result.status === 0) return result;
+    lastResult = result;
+    console.log(`Command failed (status ${result.status}). Retrying ${attempt}/${maxRetries}...`);
+    // Sleep a bit before retry just in case
+    spawnSync('node', ['-e', 'setTimeout(()=>{}, 5000)']);
+  }
+  return lastResult;
+}
+
 const allPdfs = fs.readdirSync(sourceDir).filter((f) => f.endsWith('.pdf')).sort()
 
 console.log(`Starting full batch run. Total PDFs: ${allPdfs.length}. Start offset: ${startOffset}`)
@@ -60,65 +75,67 @@ for (let offset = startOffset; offset < allPdfs.length; offset += batchSize) {
   
   console.log(`Processing offset ${offset} / ${allPdfs.length}...`)
 
-  const exportResult = spawnSync(
-    'py',
-    [
-      '-3',
-      path.join(projectRoot, 'scripts', 'generate_arlis_embedding_json.py'),
-      sourceDir,
-      '--output-dir',
-      batchDir,
-      '--mode',
-      'all',
-      '--offset',
-      String(offset),
-      '--limit',
-      String(batchSize),
-      '--workers',
-      String(workers),
-    ],
-    { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 },
-  )
+  const exportResult = runWithRetry('py', [
+    '-3',
+    path.join(projectRoot, 'scripts', 'generate_arlis_embedding_json.py'),
+    sourceDir,
+    '--output-dir',
+    batchDir,
+    '--mode',
+    'all',
+    '--offset',
+    String(offset),
+    '--limit',
+    String(batchSize),
+    '--workers',
+    String(workers),
+  ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 });
+
   if (exportResult.stdout) fs.appendFileSync(logFile, exportResult.stdout)
   if (exportResult.stderr) fs.appendFileSync(logFile, exportResult.stderr)
   if (exportResult.status !== 0) {
-    console.error(`Export failed at offset ${offset}`)
-    process.exit(1)
+    console.error(`Export permanently failed at offset ${offset}. Skipping batch.`)
+    fs.rmSync(batchDir, { recursive: true, force: true })
+    continue
   }
 
   const kbPath = path.join(batchDir, 'knowledge_base.jsonl')
   if (fs.existsSync(kbPath) && fs.statSync(kbPath).size > 0) {
     const idsPath = path.join(batchDir, 'knowledge_base_inserted_ids.json')
-    const kbImport = spawnSync('py', [
+    const kbImport = runWithRetry('py', [
       '-3', path.join(projectRoot, 'scripts', 'direct_import_knowledge_base.py'),
       kbPath, '--base-url', baseUrl, '--service-role-key', serviceRoleKey,
       '--batch-ref', `auto-kb-${batchTag}`, '--batch-size', '20', '--ids-output', idsPath
-    ], { cwd: projectRoot, encoding: 'utf8' })
+    ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 })
     if (kbImport.stdout) fs.appendFileSync(logFile, kbImport.stdout)
     if (kbImport.stderr) fs.appendFileSync(logFile, kbImport.stderr)
 
-    const kbChunk = spawnSync('node', [
-      path.join(projectRoot, 'scripts', 'fill_chunks_for_import_batch.mjs'),
-      baseUrl, serviceRoleKey, 'knowledge_base', idsPath
-    ], { cwd: projectRoot, encoding: 'utf8' })
-    if (kbChunk.stdout) fs.appendFileSync(logFile, kbChunk.stdout)
+    if (kbImport.status === 0 && fs.existsSync(idsPath)) {
+      const kbChunk = runWithRetry('node', [
+        path.join(projectRoot, 'scripts', 'fill_chunks_for_import_batch.mjs'),
+        baseUrl, serviceRoleKey, 'knowledge_base', idsPath
+      ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 })
+      if (kbChunk.stdout) fs.appendFileSync(logFile, kbChunk.stdout)
+    }
   }
 
   const lpPath = path.join(batchDir, 'legal_practice_kb.jsonl')
   if (fs.existsSync(lpPath) && fs.statSync(lpPath).size > 0) {
-    const lpImport = spawnSync('py', [
+    const lpImport = runWithRetry('py', [
       '-3', path.join(projectRoot, 'scripts', 'direct_import_legal_practice.py'),
       lpPath, '--base-url', baseUrl, '--service-role-key', serviceRoleKey,
       '--batch-ref', `auto-lp-${batchTag}`, '--batch-size', '5'
-    ], { cwd: projectRoot, encoding: 'utf8' })
+    ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 })
     if (lpImport.stdout) fs.appendFileSync(logFile, lpImport.stdout)
     if (lpImport.stderr) fs.appendFileSync(logFile, lpImport.stderr)
 
-    const lpChunk = spawnSync('node', [
-      path.join(projectRoot, 'scripts', 'fill_chunks_for_import_batch.mjs'),
-      baseUrl, serviceRoleKey, 'legal_practice_kb', `auto-lp-${batchTag}`
-    ], { cwd: projectRoot, encoding: 'utf8' })
-    if (lpChunk.stdout) fs.appendFileSync(logFile, lpChunk.stdout)
+    if (lpImport.status === 0) {
+      const lpChunk = runWithRetry('node', [
+        path.join(projectRoot, 'scripts', 'fill_chunks_for_import_batch.mjs'),
+        baseUrl, serviceRoleKey, 'legal_practice_kb', `auto-lp-${batchTag}`
+      ], { cwd: projectRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 * 50 })
+      if (lpChunk.stdout) fs.appendFileSync(logFile, lpChunk.stdout)
+    }
   }
 
   fs.rmSync(batchDir, { recursive: true, force: true })

@@ -141,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         except StopIteration:
             break
 
+    print(f"Starting ingestion from {input_path.name}...", flush=True)
+
     rows_batch: list[dict[str, Any]] = []
 
     # Stream in chunks to allow existence checks without loading full dataset.
@@ -193,8 +195,10 @@ def main(argv: list[str] | None = None) -> int:
                         assert loader is not None
                         loader.upsert_rows(rows_batch)
                     stats.inserted_or_updated += len(rows_batch)
+                    print(f"[{time.strftime('%H:%M:%S')}] Upserted {len(rows_batch)} records. Total: {stats.inserted_or_updated}", flush=True)
                     rows_batch = []
-            except Exception:
+            except Exception as e:
+                print(f"[{time.strftime('%H:%M:%S')}] Error processing record: {e}", flush=True)
                 stats.failed += 1
 
     if rows_batch:

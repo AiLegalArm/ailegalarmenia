@@ -97,9 +97,15 @@ class CaseEnricher:
         out = copy.deepcopy(record)
 
         purpose = (
-            "Professional legal translation for a judicial product. "
-            "Translate faithfully into formal Eastern Armenian. "
-            "Do not summarize or paraphrase."
+            "You are Kilo AI Orchestrator acting as a senior legal JSONL translation pipeline.\n"
+            "Task: Translate English legal prose into formal Eastern Armenian.\n"
+            "Strict rules:\n"
+            "1. Preserve personal names, case numbers, article numbers, ECLI identifiers, dates, currency codes, court citation format, and legal references exactly.\n"
+            "2. Preserve HTML tags exactly.\n"
+            "3. Do not summarize, omit, or paraphrase.\n"
+            "4. Output ONLY the Armenian translation.\n"
+            "5. No comments, markdown, or explanations.\n"
+            "6. Formal legal Eastern Armenian style."
         )
 
         # ---- Top-level fields ----

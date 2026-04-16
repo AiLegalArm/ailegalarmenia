@@ -20,13 +20,19 @@ def extract_elements_text(
     *,
     content_key: str = "content",
 ) -> None:
-    for el in elements:
+    stack = list(reversed(elements))
+    while stack:
+        el = stack.pop()
+        if not isinstance(el, dict):
+            continue
         val = el.get(content_key)
         if isinstance(val, str) and val.strip():
             parts.append(val.strip())
         sub = el.get("elements")
         if isinstance(sub, list) and sub:
-            extract_elements_text([x for x in sub if isinstance(x, dict)], parts, content_key=content_key)
+            for child in reversed(sub):
+                if isinstance(child, dict):
+                    stack.append(child)
 
 
 def extract_case_text(case_obj: dict[str, Any], *, prefer_hy: bool = False) -> str:
