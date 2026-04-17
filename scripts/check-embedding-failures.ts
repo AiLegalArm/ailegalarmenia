@@ -50,7 +50,7 @@ async function main() {
   const tables: Table[] = ["knowledge_base", "legal_practice_kb"];
 
   for (const t of tables) {
-    const base = (q: any) => includeInactive ? q : q.eq("is_active", true);
+    const base = (q: QueryBuilder) => includeInactive ? q : q.eq("is_active", true);
 
     const total = await countWhere(supabase, t, (q) => base(q));
     const failed = await countWhere(supabase, t, (q) => base(q).eq("embedding_status", "failed"));
