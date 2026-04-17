@@ -1,0 +1,8 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"legal_practice_kb|practice_chunk_jobs|knowledge_base_chunks\" /c/Users/Admin/Desktop/Hayk/ailegalarmenia-main/supabase/migrations/*.sql)"
+    ]
+  }
+}

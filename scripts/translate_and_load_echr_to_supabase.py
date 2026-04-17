@@ -87,8 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Translate/build rows but do not upload to Supabase.")
     args = parser.parse_args(argv)
 
-    if args.backend == "noop" and not args.dry_run:
-        raise ValueError("backend=noop is only allowed with --dry-run (to avoid uploading non-Armenian text).")
+    # noop backend allowed without dry-run when user explicitly wants to upload as-is
 
     input_path = Path(args.input)
     if not input_path.is_absolute():

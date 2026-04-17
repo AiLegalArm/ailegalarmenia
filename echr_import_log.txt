@@ -1,0 +1,120 @@
+Starting ingestion from out_part1.jsonl...
+{
+  "input": "c:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\out_part1.jsonl",
+  "processed": 41,
+  "upserted": 41,
+  "skipped_existing": 3179,
+  "skipped_no_text": 0,
+  "failed": 0,
+  "duration_s": 223.14317893981934,
+  "records_per_s": 0.18373853144333624,
+  "translation_backend": "noop",
+  "translation_model": null,
+  "translation_stats": {
+    "attempted": 4453,
+    "translated": 4453,
+    "skipped_blank": 0,
+    "cache_hits": 0,
+    "failures": 0,
+    "retries": 0,
+    "chunked_inputs": 0
+  },
+  "dry_run": false
+}
+Starting ingestion from out_part2.jsonl...
+{
+  "input": "c:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\out_part2.jsonl",
+  "processed": 0,
+  "upserted": 0,
+  "skipped_existing": 3219,
+  "skipped_no_text": 0,
+  "failed": 0,
+  "duration_s": 8.095383882522583,
+  "records_per_s": 0.0,
+  "translation_backend": "noop",
+  "translation_model": null,
+  "translation_stats": {
+    "attempted": 0,
+    "translated": 0,
+    "skipped_blank": 0,
+    "cache_hits": 0,
+    "failures": 0,
+    "retries": 0,
+    "chunked_inputs": 0
+  },
+  "dry_run": false
+}
+Starting ingestion from out_part3.jsonl...
+{
+  "input": "c:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\out_part3.jsonl",
+  "processed": 0,
+  "upserted": 0,
+  "skipped_existing": 3219,
+  "skipped_no_text": 0,
+  "failed": 0,
+  "duration_s": 6.4969162940979,
+  "records_per_s": 0.0,
+  "translation_backend": "noop",
+  "translation_model": null,
+  "translation_stats": {
+    "attempted": 0,
+    "translated": 0,
+    "skipped_blank": 0,
+    "cache_hits": 0,
+    "failures": 0,
+    "retries": 0,
+    "chunked_inputs": 0
+  },
+  "dry_run": false
+}
+Starting ingestion from out_part4.jsonl...
+{
+  "input": "c:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\out_part4.jsonl",
+  "processed": 0,
+  "upserted": 0,
+  "skipped_existing": 3219,
+  "skipped_no_text": 0,
+  "failed": 0,
+  "duration_s": 10.768328666687012,
+  "records_per_s": 0.0,
+  "translation_backend": "noop",
+  "translation_model": null,
+  "translation_stats": {
+    "attempted": 0,
+    "translated": 0,
+    "skipped_blank": 0,
+    "cache_hits": 0,
+    "failures": 0,
+    "retries": 0,
+    "chunked_inputs": 0
+  },
+  "dry_run": false
+}
+Starting ingestion from out_part5.jsonl...
+{
+  "input": "c:\\Users\\Admin\\Desktop\\Hayk\\AILEGALARMENIA\\Кодексы,законы\\armenian_law\\Арлис\\ЕСПЧ\\out_part5.jsonl",
+  "processed": 0,
+  "upserted": 0,
+  "skipped_existing": 3219,
+  "skipped_no_text": 0,
+  "failed": 0,
+  "duration_s": 10.286590099334717,
+  "records_per_s": 0.0,
+  "translation_backend": "noop",
+  "translation_model": null,
+  "translation_stats": {
+    "attempted": 0,
+    "translated": 0,
+    "skipped_blank": 0,
+    "cache_hits": 0,
+    "failures": 0,
+    "retries": 0,
+    "chunked_inputs": 0
+  },
+  "dry_run": false
+}
+>>> STARTING PART 1: c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out_part1.jsonl
+>>> STARTING PART 2: c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out_part2.jsonl
+>>> STARTING PART 3: c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out_part3.jsonl
+>>> STARTING PART 4: c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out_part4.jsonl
+>>> STARTING PART 5: c:\Users\Admin\Desktop\Hayk\AILEGALARMENIA\Кодексы,законы\armenian_law\Арлис\ЕСПЧ\out_part5.jsonl
