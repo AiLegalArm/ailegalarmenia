@@ -1268,7 +1268,10 @@ Please provide your professional legal analysis from your designated role perspe
 
     // Log API usage for cost tracking
     const tokensUsed = aiResponse.usage?.total_tokens || 0;
-    const estimatedCost = tokensUsed * 0.000001;
+    const inputTokens = aiResponse.usage?.prompt_tokens || Math.round(tokensUsed * 0.7);
+    const outputTokens = aiResponse.usage?.completion_tokens || Math.round(tokensUsed * 0.3);
+    const { computeCost } = await import("../_shared/rate-limiter.ts");
+    const { cost_usd: estimatedCost } = computeCost(modelUsed, inputTokens, outputTokens);
 
     await supabase.rpc("log_api_usage", {
       _service_type: "llm",

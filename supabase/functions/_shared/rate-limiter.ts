@@ -9,15 +9,28 @@ import { log, warn } from "./safe-logger.ts";
 
 // ── Pricing map (per 1K tokens) ────────────────────────────────────────────
 export const MODEL_PRICING: Record<string, { input_per_1k: number; output_per_1k: number }> = {
-  "google/gemini-2.5-flash":      { input_per_1k: 0.000075, output_per_1k: 0.0003 },
-  "google/gemini-2.5-flash-lite": { input_per_1k: 0.000025, output_per_1k: 0.0001 },
-  "google/gemini-2.5-pro":        { input_per_1k: 0.00125,  output_per_1k: 0.01 },
-  "google/gemini-3-flash-preview":{ input_per_1k: 0.0001,   output_per_1k: 0.0004 },
-  "google/gemini-3-pro-preview":  { input_per_1k: 0.0015,   output_per_1k: 0.01 },
-  "openai/gpt-5":                 { input_per_1k: 0.005,    output_per_1k: 0.015 },
-  "openai/gpt-5-mini":            { input_per_1k: 0.0004,   output_per_1k: 0.0016 },
-  "openai/gpt-5-nano":            { input_per_1k: 0.0001,   output_per_1k: 0.0004 },
-  "openai/gpt-5.2":               { input_per_1k: 0.008,    output_per_1k: 0.024 },
+  // ── Anthropic Claude (primary legal reasoning models) ──────────────────────
+  "anthropic/claude-3.5-sonnet":       { input_per_1k: 0.003,   output_per_1k: 0.015 },
+  "anthropic/claude-3.5-haiku":        { input_per_1k: 0.0008,  output_per_1k: 0.004 },
+  "anthropic/claude-3-opus":           { input_per_1k: 0.015,   output_per_1k: 0.075 },
+  "anthropic/claude-opus-4":           { input_per_1k: 0.015,   output_per_1k: 0.075 },
+  "anthropic/claude-sonnet-4":         { input_per_1k: 0.003,   output_per_1k: 0.015 },
+  // ── OpenAI (embeddings + utilities) ───────────────────────────────────────
+  "openai/text-embedding-3-small":     { input_per_1k: 0.00002, output_per_1k: 0 },
+  "openai/text-embedding-3-large":     { input_per_1k: 0.00013, output_per_1k: 0 },
+  "openai/text-embedding-ada-002":     { input_per_1k: 0.0001,  output_per_1k: 0 },
+  "openai/gpt-4.1-mini":               { input_per_1k: 0.0004,  output_per_1k: 0.0016 },
+  "openai/gpt-4.1":                    { input_per_1k: 0.002,   output_per_1k: 0.008 },
+  "openai/gpt-5":                      { input_per_1k: 0.005,   output_per_1k: 0.015 },
+  "openai/gpt-5-mini":                 { input_per_1k: 0.0004,  output_per_1k: 0.0016 },
+  "openai/gpt-5-nano":                 { input_per_1k: 0.0001,  output_per_1k: 0.0004 },
+  "openai/gpt-5.2":                    { input_per_1k: 0.008,   output_per_1k: 0.024 },
+  // ── Google Gemini ──────────────────────────────────────────────────────────
+  "google/gemini-2.5-flash":           { input_per_1k: 0.000075, output_per_1k: 0.0003 },
+  "google/gemini-2.5-flash-lite":      { input_per_1k: 0.000025, output_per_1k: 0.0001 },
+  "google/gemini-2.5-pro":             { input_per_1k: 0.00125,  output_per_1k: 0.01 },
+  "google/gemini-3-flash-preview":     { input_per_1k: 0.0001,   output_per_1k: 0.0004 },
+  "google/gemini-3-pro-preview":       { input_per_1k: 0.0015,   output_per_1k: 0.01 },
 };
 
 /**

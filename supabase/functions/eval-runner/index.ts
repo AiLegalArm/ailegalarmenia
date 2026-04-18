@@ -554,17 +554,42 @@ serve(async (req) => {
   const authErr = validateBrowserRequest(req, corsHeaders);
   if (authErr) return authErr;
 
+  // ── Admin-only guard (FIX-4: BUG-H2) ────────────────────────────────────
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.replace("Bearer ", "");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+  if (!anonKey) {
+    err("eval-runner", "SUPABASE_ANON_KEY is not set");
+    return json({ error: "missing_env", detail: "SUPABASE_ANON_KEY required" }, 500);
+  }
+
+  // Validate token server-side (revocation check)
+  const authClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: authData, error: authError } = await authClient.auth.getUser(token);
+  if (authError || !authData?.user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // Require admin role
+  const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: isAdmin } = await serviceClient.rpc("has_role", {
+    _user_id: authData.user.id,
+    _role: "admin",
+  });
+  if (!isAdmin) {
+    warn("eval-runner", "Non-admin user attempted eval run", { userId: authData.user.id });
+    return json({ error: "Forbidden: admin role required" }, 403);
+  }
+
   try {
     const { suite_id } = await req.json();
     if (!suite_id) return json({ error: "suite_id is required" }, 400);
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    if (!anonKey) {
-      err("eval-runner", "SUPABASE_ANON_KEY is not set");
-      return json({ error: "missing_env", detail: "SUPABASE_ANON_KEY required" }, 500);
-    }
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: cases, error: casesErr } = await supabase

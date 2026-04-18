@@ -749,7 +749,7 @@ serve(async (req) => {
         _service_type: "multi_agent_synthesis",
         _model_name: synthResult.model_used,
         _tokens_used: synthResult.usage?.total_tokens ?? 0,
-        _estimated_cost: (synthResult.usage?.total_tokens ?? 0) * 0.000001,
+        _estimated_cost: await (async () => { const { computeCost } = await import("../_shared/rate-limiter.ts"); const t = synthResult.usage?.total_tokens ?? 0; return computeCost(synthResult.model_used, Math.round(t * 0.7), Math.round(t * 0.3)).cost_usd; })(),
         _metadata: { agentType, caseId, runId, mode: "synthesis", filesCount: fileAnalyses.length },
       });
 
@@ -806,7 +806,7 @@ serve(async (req) => {
         _service_type: "multi_agent_file",
         _model_name: fileResult.model_used,
         _tokens_used: fileResult.usage?.total_tokens ?? 0,
-        _estimated_cost: (fileResult.usage?.total_tokens ?? 0) * 0.000001,
+        _estimated_cost: await (async () => { const { computeCost } = await import("../_shared/rate-limiter.ts"); const t = fileResult.usage?.total_tokens ?? 0; return computeCost(fileResult.model_used, Math.round(t * 0.7), Math.round(t * 0.3)).cost_usd; })(),
         _metadata: { agentType, caseId, runId, fileId, mode: "single_file" },
       });
 
@@ -994,11 +994,15 @@ serve(async (req) => {
     }
 
     // Log usage
+    const { computeCost: computeMultiAgentCost } = await import("../_shared/rate-limiter.ts");
+    const inputTokensEst = aiResponse.usage?.prompt_tokens || Math.round(tokensUsed * 0.7);
+    const outputTokensEst = aiResponse.usage?.completion_tokens || Math.round(tokensUsed * 0.3);
+    const { cost_usd: multiAgentCostUsd } = computeMultiAgentCost(modelUsed, inputTokensEst, outputTokensEst);
     await supabase.rpc("log_api_usage", {
       _service_type: "multi_agent",
       _model_name: modelUsed,
       _tokens_used: tokensUsed,
-      _estimated_cost: tokensUsed * 0.000001,
+      _estimated_cost: multiAgentCostUsd,
       _metadata: { agentType, caseId, runId }
     });
 

@@ -108,11 +108,11 @@ Deno.serve(async (req) => {
 
     // Verify admin
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
+    const { data: claimsData, error: claimsErr } = await userClient.auth.getUser(token);
+    if (claimsErr || !claimsData?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = claimsData.user.id as string;
 
     const { data: roleData } = await userClient.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
     if (!roleData) {

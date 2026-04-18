@@ -61,14 +61,14 @@ serve(async (req) => {
     );
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await sb.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
+    const { data: claimsData, error: claimsErr } = await sb.auth.getUser(token);
+    if (claimsErr || !claimsData?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const userId = claimsData.claims.sub;
+    const userId = claimsData.user.id;
 
     // === ADMIN RBAC CHECK ===
     const { data: isAdmin, error: roleErr } = await sb.rpc("has_role", {

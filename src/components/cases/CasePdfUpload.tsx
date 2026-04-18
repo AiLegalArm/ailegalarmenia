@@ -166,12 +166,12 @@ export function CasePdfUpload({ open, onOpenChange, caseId, onSuccess }: CasePdf
     setProgress(0);
 
     try {
-      // Call AI analysis function (using existing legal analysis)
-      const { data, error } = await supabase.functions.invoke('analyze-legal-case', {
+      // Call AI analysis function
+      const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: {
           caseId,
           role: 'advocate',
-          facts: extractedText,
+          caseFacts: extractedText,
           legalQuestion: 'Analyze the content of this document',
         },
       });

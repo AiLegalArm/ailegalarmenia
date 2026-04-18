@@ -1,0 +1,341 @@
+=============================================================================
+USER AND ROLE DEPENDENCY AUDIT
+AI Legal Armenia Database
+=============================================================================
+
+## SUMMARY OF FINDINGS
+
+This audit maps all user_id and role-based foreign keys in the AI Legal Armenia
+database to understand cascading deletion behavior, safe cleanup order, and risks
+for Tasks 15-16 (user removal and test data generation).
+
+=============================================================================
+## 1. USER DATA OWNERSHIP MAP
+=============================================================================
+
+Tables with HARD CASCADE on auth.users deletion (user_id NOT NULL):
+- profiles
+- user_roles
+- reminders
+- notifications
+- encrypted_pii
+- eval_run_results (via eval_runs via suite)
+
+These tables AUTO-DELETE when a user is deleted from auth.users.
+
+---
+
+Tables with SOFT DELETE on auth.users deletion (user_id nullable, SET NULL):
+- audit_logs
+- api_usage
+- case_comments (author_id, but NO FOREIGN KEY declared)
+- user_notes (user_id but NO FOREIGN KEY declared)
+- error_logs
+- user_feedback
+- case_volumes (no user_id, but has created_by no FK)
+- agent_analysis_runs (created_by, no ON DELETE clause)
+
+These tables PRESERVE RECORDS but set user references to NULL when user is deleted.
+
+---
+
+Tables with NO DIRECT user_id but reference auth.users indirectly:
+- cases (client_id, lawyer_id → both SET NULL)
+- case_files (uploaded_by → SET NULL)
+- knowledge_base (uploaded_by → SET NULL)
+- ocr_results (reviewed_by → SET NULL)
+- audio_transcriptions (reviewed_by → SET NULL)
+- ai_analysis (created_by → SET NULL)
+- team_members (user_id → NO FOREIGN KEY constraint, orphans possible)
+- document_templates (created_by → no FK constraint)
+- generated_documents (created_by → no FK constraint)
+
+---
+
+Tables with ZERO user references:
+- case_volumes, legal_chunks, legal_practice_kb, legal_documents
+- knowledge_base_chunks, kb_versions, legal_practice_kb_chunks
+- ai_prompts, ai_prompt_versions
+- document_templates (has created_by TEXT but not UUID)
+- app_settings, armenian_dictionary, translations_cache
+- eval_suites, eval_cases
+- echr_cases_hy
+- And all internal infrastructure tables (agent_jobs, dictionary_import_jobs, etc.)
+
+=============================================================================
+## 2. CASCADE BEHAVIOR ANALYSIS
+=============================================================================
+
+ON DELETE CASCADE (automatic deletion):
+├── profiles (id UUID PK references auth.users(id) ON DELETE CASCADE)
+├── user_roles (user_id UUID references auth.users(id) ON DELETE CASCADE)
+├── reminders (user_id UUID NOT NULL references auth.users(id) ON DELETE CASCADE)
+│   └── notifications (reminder_id on DELETE CASCADE)
+├── encrypted_pii (user_id UUID NOT NULL references auth.users(id) ON DELETE CASCADE)
+└── eval_run_results (run_id on DELETE CASCADE, run references suite)
+
+ON DELETE SET NULL (soft reference):
+├── audit_logs (user_id)
+├── api_usage (user_id)
+├── case_files (uploaded_by)
+├── knowledge_base (uploaded_by)
+├── ocr_results (reviewed_by)
+├── audio_transcriptions (reviewed_by)
+├── ai_analysis (created_by)
+├── user_feedback (user_id)
+├── cases (client_id, lawyer_id)
+├── error_logs (user_id)
+└── case_comments (NO FK, orphans possible)
+
+NO FK CONSTRAINT (ORPHAN RISK):
+├── team_members (user_id, NO CONSTRAINT)
+├── user_notes (user_id, NO CONSTRAINT, but has RLS)
+├── case_comments (author_id, NO CONSTRAINT, but has RLS)
+├── document_templates (created_by TEXT, not UUID)
+└── generated_documents (created_by, no constraint)
+
+=============================================================================
+## 3. SAFE DELETION ORDER (Critical for Task 15)
+=============================================================================
+
+Since we have CASCADE constraints, deletion from auth.users will AUTOMATICALLY
+delete dependent records. However, to be SAFE and AUDITABLE, follow this order:
+
+1. MANUALLY delete from user_notes (no FK, but user-owned)
+   - SELECT id FROM user_notes WHERE user_id = $1
+
+2. MANUALLY delete from case_comments (no FK, but audit trail)
+   - SELECT id FROM case_comments WHERE author_id = $1
+
+3. MANUALLY delete from team_members (no FK constraint!)
+   - DELETE FROM team_members WHERE user_id = $1
+   - These orphans would persist after auth user deletion
+
+4. CLEAR user references from case ownership (optional, for data cleanliness)
+   - UPDATE cases SET client_id = NULL WHERE client_id = $1
+   - UPDATE cases SET lawyer_id = NULL WHERE lawyer_id = $1
+   - CASCADE WILL set these to NULL anyway, but explicit is safer
+
+5. DELETE from auth.users (THIS TRIGGERS ALL CASCADES)
+   - DELETE FROM auth.users WHERE id = $1
+   - Automatically deletes: profiles, user_roles, reminders, notifications,
+     encrypted_pii, eval_run_results
+   - Automatically sets NULL: audit_logs.user_id, api_usage.user_id, etc.
+
+=============================================================================
+## 4. ROLE DEPENDENCY MAP
+=============================================================================
+
+Role enum: app_role = ('admin', 'lawyer', 'client', 'auditor', 'appeal_party')
+
+Tables tracking roles:
+- user_roles (user_id → role mapping, ON DELETE CASCADE)
+- role_limits (role TEXT PK, stores hourly/monthly limits)
+
+RLS Policies depending on has_role():
+- Profiles: admins view all, lawyers view clients, users view own
+- Cases: lawyers see own cases, clients see own, admins see all, auditors see all
+- Case files: users see own, admins see all
+- Knowledge base: everyone reads active KB, admins manage
+- Audit logs: admins + auditors can view
+- OCR/Audio/AI Analysis: users see own, admins see all, lawyers create
+
+Key observation: Role checks use has_role() SECURITY DEFINER function which
+queries user_roles table. Deleting from auth.users cascades to user_roles,
+so role checks will fail after deletion (safe, expected).
+
+=============================================================================
+## 5. CRITICAL RISKS & WARNINGS
+=============================================================================
+
+RISK 1: ORPHANED RECORDS
+- team_members.user_id has NO FOREIGN KEY constraint
+  If user is deleted from auth.users, team_members records orphan
+  Action: Must manually delete team_members BEFORE auth.users deletion
+
+- user_notes.user_id has NO CONSTRAINT
+  Same risk, but smaller surface area
+  Action: Must manually delete user_notes BEFORE auth.users deletion
+
+- case_comments.author_id has NO CONSTRAINT
+  Same risk, audit trail affected
+  Action: Should manually delete BEFORE deletion
+
+RISK 2: MISSING FK CONSTRAINTS
+- Several tables reference users but lack FK constraints:
+  - document_templates (created_by TEXT, not even UUID)
+  - generated_documents (created_by, no constraint)
+  These should be added in a future migration.
+
+RISK 3: RLS BYPASS
+- Deleting a user breaks RLS-based access immediately
+- case_comments, user_notes policies use auth.uid() = user_id
+- After deletion, these records become inaccessible (correct behavior)
+- But orphaned records would bypass RLS checks if they exist
+
+RISK 4: AUDIT TRAIL LOSS
+- audit_logs.user_id → SET NULL on deletion
+- If deleting a user who performed auditable actions, the audit trail
+  still exists but user context is lost
+- Consider archiving audit logs BEFORE deletion if compliance required
+
+RISK 5: OPERATIONAL DATA LOSS
+- Deleting a lawyer cascades deletion of reminders and notifications
+- Clients' reminders about court dates will be lost
+- Consider soft-delete (update deleted_at) instead of hard delete
+
+RISK 6: TEAMS BECOME INVALID
+- If a team leader is deleted, teams.leader_id becomes NULL
+- Team access control becomes undefined
+- No ON DELETE CASCADE on teams.leader_id (it's nullable)
+- Teams could become orphaned with no leader
+
+=============================================================================
+## 6. SOFT vs HARD DELETE PATTERN ANALYSIS
+=============================================================================
+
+Soft Delete columns detected (deleted_at TIMESTAMPTZ):
+- cases (deleted_at column exists)
+- case_files (deleted_at column exists)
+
+Hard Delete pattern (cascading):
+- user_roles → cascades on user delete
+- reminders → cascades on user delete
+- notifications → cascades on reminder delete
+- encrypted_pii → cascades on user delete
+
+Recommended approach for Task 15:
+→ HYBRID: Soft-delete for business data, hard-delete for auth
+  - DO: Mark user's cases/files as deleted_at = now()
+  - DO: Delete from team_members (orphan prevention)
+  - DO: Delete from user_notes (no FK, prevent orphans)
+  - DO: Delete from case_comments (no FK, audit)
+  - THEN: Delete from auth.users (hard delete, triggers cascades)
+
+This preserves audit trail, complies with RLS, and prevents orphans.
+
+=============================================================================
+## 7. RLS IMPLICATIONS FOR DELETION
+=============================================================================
+
+Active RLS Policies on user-owned tables:
+- user_notes: "Users can view their own notes" uses auth.uid() = user_id
+- case_comments: No explicit user-only policies, but has RLS enabled
+- audit_logs: Admins + auditors can view, system can insert
+- All profile policies check auth.uid() = id
+
+After user deletion:
+- auth.uid() will NOT match the deleted user_id
+- Records become invisible to normal auth checks
+- But remaining orphans (if any) would also be invisible
+- Safest: ensure NO orphans exist before deletion
+
+=============================================================================
+## 8. CURRENT USERS & TEST DATA
+=============================================================================
+
+Skipped DB queries per instructions.
+Will be populated during Task 15-16 execution.
+
+Current state: Schema-level analysis only.
+
+=============================================================================
+## 9. RECOMMENDED TASK 15 APPROACH
+=============================================================================
+
+Use DELETE with CASCADE monitoring for each user:
+
+Phase 1: Pre-Deletion Cleanup
+  FOR EACH user_id:
+    -- Delete orphan-prone records
+    DELETE FROM user_notes WHERE user_id = $1;
+    DELETE FROM case_comments WHERE author_id = $1;
+    DELETE FROM team_members WHERE user_id = $1;
+    
+    -- Optional: soft-delete business data first
+    UPDATE cases SET deleted_at = now() WHERE client_id = $1 OR lawyer_id = $1;
+    UPDATE case_files SET deleted_at = now() WHERE uploaded_by = $1;
+    
+    -- Log the deletion for audit
+    INSERT INTO audit_logs (action, user_id, details)
+      VALUES ('user_hard_delete', $1, '{"deleted_at": now()}');
+
+Phase 2: Hard Delete from Auth
+    DELETE FROM auth.users WHERE id = $1;
+    -- This triggers CASCADE deletes:
+    --   profiles
+    --   user_roles
+    --   reminders
+    --   notifications
+    --   encrypted_pii
+    -- And SET NULL on:
+    --   audit_logs.user_id
+    --   api_usage.user_id
+    --   case_files.uploaded_by
+    --   etc.
+
+Phase 3: Validation
+  -- Verify no orphan records
+  SELECT COUNT(*) FROM team_members WHERE user_id = $1;
+  SELECT COUNT(*) FROM user_notes WHERE user_id = $1;
+  SELECT COUNT(*) FROM case_comments WHERE author_id = $1;
+  -- All should return 0
+
+=============================================================================
+## 10. TASK 16: TEST USER GENERATION CONSIDERATIONS
+=============================================================================
+
+When creating test users, ensure:
+
+1. Create in auth.users first
+   - trigger on_auth_user_created fires automatically
+   - Creates profiles + assigns 'client' role to user_roles
+
+2. Assign additional roles as needed
+   - INSERT INTO user_roles (user_id, role) VALUES ($1, 'lawyer')
+   - INSERT INTO user_roles (user_id, role) VALUES ($1, 'auditor')
+   - etc.
+
+3. Create test data referencing users
+   - Cases (client_id, lawyer_id)
+   - Team memberships (team_members.user_id)
+   - Test reminders, notes, comments
+
+4. Verify RLS works correctly
+   - Test that lawyer can see only their cases
+   - Test that client can see only their cases
+   - Test that auditor can see all
+   - Test that admin can manage all
+
+5. Use distinct emails/usernames for test users
+   - profiles.email and profiles.username are UNIQUE
+   - Plan naming: test_admin, test_lawyer_1, test_client_1, etc.
+
+=============================================================================
+## 11. MIGRATION RECOMMENDATIONS (Future)
+=============================================================================
+
+To strengthen cascade behavior:
+
+1. Add FK constraint to team_members.user_id:
+   ALTER TABLE team_members ADD CONSTRAINT fk_team_members_user_id
+     FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+2. Add FK constraint to user_notes.user_id:
+   ALTER TABLE user_notes ADD CONSTRAINT fk_user_notes_user_id
+     FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+3. Add FK constraint to case_comments.author_id:
+   ALTER TABLE case_comments ADD CONSTRAINT fk_case_comments_author_id
+     FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+4. Fix document_templates.created_by to be UUID with FK:
+   ALTER TABLE document_templates ALTER COLUMN created_by TYPE UUID;
+   ALTER TABLE document_templates ADD CONSTRAINT fk_doc_templates_created_by
+     FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+5. Add FK to generated_documents.created_by:
+   ALTER TABLE generated_documents ADD CONSTRAINT fk_gen_docs_created_by
+     FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+=============================================================================
