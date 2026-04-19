@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { log, warn, err } from "../_shared/safe-logger.ts";
 import { detectCaseNumberInQuery } from "../_shared/rag-search.ts";
 import { generateEmbedding } from "../_shared/embeddings.ts";
+import type { MergedItem } from "../_shared/rag-types.ts";
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -29,15 +30,7 @@ interface SearchRequest {
   kbCategory?: string | null;
 }
 
-interface MergedItem {
-  source: "kb" | "practice";
-  id: string;
-  title: string;
-  normalized_score: number;
-  raw_score: number;
-  preview: string;
-  meta: Record<string, unknown>;
-}
+// MergedItem is imported from _shared/rag-types.ts — single source of truth
 
 // ─── HTML entity cleanup ─────────────────────────────────────────────────────
 const HTML_ENTITY_MAP: Record<string, string> = {

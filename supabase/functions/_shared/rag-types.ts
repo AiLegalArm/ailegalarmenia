@@ -42,10 +42,31 @@ export interface PracticeSearchResult {
   score?: number;
 }
 
+/**
+ * Single item in the unified merged result list returned by kb-unified-search.
+ * Combines KB documents and legal-practice records into one ranked stream.
+ */
+export interface MergedItem {
+  /** Which collection this result came from */
+  source: "kb" | "practice";
+  id: string;
+  title: string;
+  /** Hybrid score: 0.6 × FTS_normalized + 0.4 × cosine_similarity (range 0–1) */
+  normalized_score: number;
+  /** Raw FTS rank before normalization */
+  raw_score: number;
+  /** Truncated content preview (≤ MAX_PREVIEW_CHARS characters) */
+  preview: string;
+  /** Source-specific metadata (category, court_type, outcome, etc.) */
+  meta: Record<string, unknown>;
+}
+
 /** Shape returned by the vector-search edge function */
 export interface VectorSearchResponse {
   kb: KBSearchResult[];
   practice: PracticeSearchResult[];
+  /** Unified ranked list merging KB + practice results by hybrid score */
+  merged?: MergedItem[];
   /** Telemetry: which retrieval methods produced results */
   retrieval_mode?: "keyword+rerank" | "keyword_only" | "rpc_fallback";
   /** Whether AI reranking succeeded */
