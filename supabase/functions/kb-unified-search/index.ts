@@ -5,6 +5,13 @@ import { detectCaseNumberInQuery } from "../_shared/rag-search.ts";
 import { handleCors } from "../_shared/edge-security.ts";
 import { generateEmbedding } from "../_shared/embeddings.ts";
 
+// ─── CORS headers ─────────────────────────────────────────────────────────────
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-key",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 // ─── Hard caps (env-overridable) ─────────────────────────────────────────────
 const MAX_KB_DOCS = 10;
 const MAX_KB_CHUNKS = Number(Deno.env.get("MAX_KB_CHUNKS_RETURNED")) || 40;
