@@ -85,7 +85,7 @@ serve(async (req) => {
 
     console.log(`Processing audio transcription for: ${fileName}`);
 
-    // Check file size
+    // Check file size via HEAD request (avoids downloading the whole file just for size check)
     const headResponse = await fetch(audioUrl, { method: "HEAD" });
     const contentLength = headResponse.headers.get("content-length");
     const fileSize = contentLength ? parseInt(contentLength, 10) : 0;
@@ -98,32 +98,19 @@ serve(async (req) => {
       }), { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Download the audio
-    console.log("Downloading audio file...");
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
-
-    const audioBuffer = await audioResponse.arrayBuffer();
-    console.log(`Downloaded ${(audioBuffer.byteLength / 1024 / 1024).toFixed(2)} MB`);
-
-    // Convert to base64
-    const uint8Array = new Uint8Array(audioBuffer);
-    const { uint8ToBase64 } = await import("../_shared/base64.ts");
-    const base64Audio = uint8ToBase64(uint8Array);
-
-    // Determine MIME type
-    const ext = fileName?.split(".").pop()?.toLowerCase() || "mp3";
-    const mimeMap: Record<string, string> = {
-      mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4",
-      ogg: "audio/ogg", flac: "audio/flac", webm: "audio/webm",
-      mp4: "video/mp4", avi: "video/x-msvideo", mov: "video/quicktime",
-      mkv: "video/x-matroska",
-    };
-    const mimeType = mimeMap[ext] || "audio/mpeg";
-
-    // Call via centralized gateway-bypass (multimodal content requires bypass)
+    // Call via centralized gateway-bypass (multimodal audio).
+    //
+    // WHY URL INSTEAD OF DATA URI:
+    // Previously we downloaded the audio, base64-encoded it, and sent it as
+    // `data:audio/mp4;base64,...`. The Lovable AI Gateway re-detects MIME types from
+    // magic bytes — M4A files are classified as audio/x-m4a (Apple variant), which the
+    // gateway rejects as unsupported even though we declared audio/mp4.
+    //
+    // Passing the signed Storage URL directly lets the gateway (or Gemini) fetch the
+    // file via HTTP. Supabase Storage serves it with Content-Type: audio/mp4 (set at
+    // upload time), which is an authoritative server header the gateway accepts.
     const { callGatewayBypass } = await import("../_shared/gateway-bypass.ts");
-    console.log("Sending to AI via centralized gateway-bypass (multimodal)...");
+    console.log("Sending to AI via centralized gateway-bypass (multimodal audio URL)...");
 
     const bypassResult = await callGatewayBypass(
       [
@@ -158,7 +145,9 @@ serve(async (req) => {
             {
               type: "image_url",
               image_url: {
-                url: `data:${mimeType};base64,${base64Audio}`,
+                // Pass signed Storage URL directly — gateway fetches it with
+                // Content-Type: audio/mp4 from the Storage response header.
+                url: audioUrl,
               },
             },
           ],
