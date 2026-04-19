@@ -2,7 +2,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { log, warn, err } from "../_shared/safe-logger.ts";
 import { detectCaseNumberInQuery } from "../_shared/rag-search.ts";
-import { handleCors } from "../_shared/edge-security.ts";
 import { generateEmbedding } from "../_shared/embeddings.ts";
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
