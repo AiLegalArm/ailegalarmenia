@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.91.1";
 import { log, warn, err } from "../_shared/safe-logger.ts";
 import { detectCaseNumberInQuery } from "../_shared/rag-search.ts";
 import { handleCors } from "../_shared/edge-security.ts";
+import { generateEmbedding } from "../_shared/embeddings.ts";
 
 // ─── Hard caps (env-overridable) ─────────────────────────────────────────────
 const MAX_KB_DOCS = 10;
@@ -120,7 +121,15 @@ serve(async (req) => {
 
     log("kb-unified-search", "Start", { requestId, qLen: query.length });
 
-    // ─── Parallel RPC calls ──────────────────────────────────────────
+    // ─── Generate query embedding for semantic search (non-blocking) ─
+    let queryEmbedding: number[] | null = null;
+    try {
+      queryEmbedding = await generateEmbedding(query);
+    } catch (e) {
+      warn("kb-unified-search", "Embedding generation failed, falling back to keyword-only", { requestId, error: String(e) });
+    }
+
+    // ─── Parallel RPC calls (keyword + semantic) ─────────────────────
     const parallelCalls: Promise<unknown>[] = [
       sb.rpc("search_kb_chunks", {
         p_query: query,
@@ -138,6 +147,24 @@ serve(async (req) => {
       }),
     ];
 
+    // Add semantic calls if embedding succeeded
+    if (queryEmbedding) {
+      parallelCalls.push(
+        sb.rpc("search_kb_semantic", {
+          p_embedding: JSON.stringify(queryEmbedding),
+          p_category: kbCategory,
+          p_limit: MAX_KB_DOCS,
+          p_threshold: 0.3,
+        }),
+        sb.rpc("search_practice_semantic", {
+          p_embedding: JSON.stringify(queryEmbedding),
+          category_filter: practiceCategory,
+          p_limit: MAX_PRACTICE_DOCS,
+          p_threshold: 0.3,
+        }),
+      );
+    }
+
     // If case_number detected, also do a direct lookup in parallel
     if (detectedCaseNumber) {
       parallelCalls.push(
@@ -152,7 +179,55 @@ serve(async (req) => {
     const settled = await Promise.allSettled(parallelCalls);
     const kbResult = settled[0] as PromiseSettledResult<{ data: unknown; error: unknown }>;
     const practiceChunksResult = settled[1] as PromiseSettledResult<{ data: unknown; error: unknown }>;
-    const caseNumberResult = settled[2] as PromiseSettledResult<{ data: Array<Record<string, unknown>>; error: unknown }> | undefined;
+
+    // Semantic results are at index 2 and 3 (when embedding succeeded)
+    // Case number result may be at index 2 or 4 depending on whether embedding was generated
+    let kbSemanticResult: PromiseSettledResult<{ data: unknown; error: unknown }> | undefined;
+    let practiceSemanticResult: PromiseSettledResult<{ data: unknown; error: unknown }> | undefined;
+    let caseNumberResult: PromiseSettledResult<{ data: Array<Record<string, unknown>>; error: unknown }> | undefined;
+
+    if (queryEmbedding) {
+      kbSemanticResult = settled[2] as PromiseSettledResult<{ data: unknown; error: unknown }>;
+      practiceSemanticResult = settled[3] as PromiseSettledResult<{ data: unknown; error: unknown }>;
+      caseNumberResult = settled[4] as PromiseSettledResult<{ data: Array<Record<string, unknown>>; error: unknown }> | undefined;
+    } else {
+      caseNumberResult = settled[2] as PromiseSettledResult<{ data: Array<Record<string, unknown>>; error: unknown }> | undefined;
+    }
+
+    // ─── Parse semantic results into lookup maps ──────────────────────
+    interface KBSemanticRow {
+      id: string; title: string; category: string;
+      source_name: string | null; article_number: string | null;
+      source_url: string | null; similarity: number;
+    }
+    interface PracticeSemanticRow {
+      id: string; title: string; practice_category: string;
+      court_type: string; outcome: string; decision_date: string | null;
+      source_url: string | null; similarity: number;
+    }
+
+    const kbSemanticMap = new Map<string, number>();
+    const kbSemanticDocs = new Map<string, KBSemanticRow>();
+    const practiceSemanticMap = new Map<string, number>();
+    const practiceSemanticDocs = new Map<string, PracticeSemanticRow>();
+
+    if (kbSemanticResult?.status === "fulfilled" && kbSemanticResult.value.data) {
+      for (const row of (kbSemanticResult.value.data as KBSemanticRow[])) {
+        kbSemanticMap.set(row.id, row.similarity);
+        kbSemanticDocs.set(row.id, row);
+      }
+    } else if (kbSemanticResult?.status === "rejected") {
+      warn("kb-unified-search", "KB semantic RPC failed", { requestId, err: String((kbSemanticResult as PromiseRejectedResult).reason) });
+    }
+
+    if (practiceSemanticResult?.status === "fulfilled" && practiceSemanticResult.value.data) {
+      for (const row of (practiceSemanticResult.value.data as PracticeSemanticRow[])) {
+        practiceSemanticMap.set(row.id, row.similarity);
+        practiceSemanticDocs.set(row.id, row);
+      }
+    } else if (practiceSemanticResult?.status === "rejected") {
+      warn("kb-unified-search", "Practice semantic RPC failed", { requestId, err: String((practiceSemanticResult as PromiseRejectedResult).reason) });
+    }
 
     // ─── Parse KB results ────────────────────────────────────────────
     interface KBDoc {
@@ -334,20 +409,28 @@ serve(async (req) => {
       })),
     }));
 
-    // ─── Build merged array with normalized scores ───────────────────
+    // ─── Build merged array with hybrid scores (FTS 60% + semantic 40%) ─
     const merged: MergedItem[] = [];
 
     // KB items
     const kbRawScores = kbItems.map((d) => Number(d.max_score) || 0);
     const kbNorm = normalizeScores(kbRawScores);
+    const kbAddedIds = new Set<string>();
+
     for (let i = 0; i < kbItems.length; i++) {
       const d = kbItems[i];
+      kbAddedIds.add(d.id);
+      const ftsNorm = kbNorm[i];
+      const semSim = kbSemanticMap.get(d.id) ?? 0;
+      const hybridScore = queryEmbedding
+        ? 0.6 * ftsNorm + 0.4 * semSim
+        : ftsNorm;
       const bestChunk = d.chunks[0];
       merged.push({
         source: "kb",
         id: d.id,
         title: d.title,
-        normalized_score: kbNorm[i],
+        normalized_score: hybridScore,
         raw_score: kbRawScores[i],
         preview: bestChunk ? bestChunk.excerpt.substring(0, MAX_PREVIEW_CHARS) : "",
         meta: {
@@ -358,11 +441,39 @@ serve(async (req) => {
       });
     }
 
+    // KB semantic-only hits (not found by FTS but found semantically)
+    if (queryEmbedding) {
+      for (const [docId, row] of kbSemanticDocs) {
+        if (kbAddedIds.has(docId)) continue;
+        merged.push({
+          source: "kb",
+          id: docId,
+          title: row.title,
+          normalized_score: 0.4 * (kbSemanticMap.get(docId) ?? 0),
+          raw_score: 0,
+          preview: "",
+          meta: {
+            category: row.category,
+            ...(row.source_name ? { source_name: row.source_name } : {}),
+            ...(row.article_number ? { article_number: row.article_number } : {}),
+          },
+        });
+      }
+    }
+
     // Practice items
     const practiceRawScores = practiceItems.map((d) => d.max_score);
     const practiceNorm = normalizeScores(practiceRawScores);
+    const practiceAddedIds = new Set<string>();
+
     for (let i = 0; i < practiceItems.length; i++) {
       const d = practiceItems[i];
+      practiceAddedIds.add(d.id);
+      const ftsNorm = practiceNorm[i];
+      const semSim = practiceSemanticMap.get(d.id) ?? 0;
+      const hybridScore = queryEmbedding
+        ? 0.6 * ftsNorm + 0.4 * semSim
+        : ftsNorm;
       const preview = d.top_chunks.length > 0
         ? d.top_chunks[0].text.substring(0, MAX_PREVIEW_CHARS)
         : "";
@@ -370,7 +481,7 @@ serve(async (req) => {
         source: "practice",
         id: d.id,
         title: d.title,
-        normalized_score: practiceNorm[i],
+        normalized_score: hybridScore,
         raw_score: practiceRawScores[i],
         preview,
         meta: {
@@ -379,6 +490,26 @@ serve(async (req) => {
           outcome: d.outcome,
         },
       });
+    }
+
+    // Practice semantic-only hits
+    if (queryEmbedding) {
+      for (const [docId, row] of practiceSemanticDocs) {
+        if (practiceAddedIds.has(docId)) continue;
+        merged.push({
+          source: "practice",
+          id: docId,
+          title: row.title,
+          normalized_score: 0.4 * (practiceSemanticMap.get(docId) ?? 0),
+          raw_score: 0,
+          preview: "",
+          meta: {
+            practice_category: row.practice_category,
+            court_type: row.court_type,
+            outcome: row.outcome,
+          },
+        });
+      }
     }
 
     // Stable sort: normalized desc, raw desc, practice before kb, title asc
@@ -400,6 +531,7 @@ serve(async (req) => {
       JSON.stringify({
         requestId,
         query,
+        semantic_ok: queryEmbedding !== null,
         kb: { documents: kbItems, chunks: kbChunks.slice(0, MAX_KB_CHUNKS) },
         practice: practiceItems,
         merged,

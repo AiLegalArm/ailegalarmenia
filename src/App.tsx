@@ -126,7 +126,7 @@ const App = () => (
             <Route
               path="/kb"
               element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute>
                   <Suspense fallback={<PageLoader />}>
                     <KnowledgeBase />
                   </Suspense>
@@ -136,7 +136,7 @@ const App = () => (
             <Route
               path="/kb/:id"
               element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute>
                   <Suspense fallback={<PageLoader />}>
                     <KBDocumentDetail />
                   </Suspense>
