@@ -70,7 +70,8 @@ const App = () => (
             Skip to main content
           </a>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/landing" element={<Index />} />
             <Route path="/login" element={<Navigate to="/admin/login" replace />} />
             {/* ... keep existing code (all routes) */}
             <Route
