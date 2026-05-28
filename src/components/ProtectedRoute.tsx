@@ -14,7 +14,7 @@ const getLoginRedirect = (requiredRole?: string): string => {
     return '/admin/login';
   }
 
-  return '/login';
+  return '/landing';
 };
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
