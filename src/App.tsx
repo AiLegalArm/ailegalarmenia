@@ -13,7 +13,7 @@ import "@/i18n/config";
 
 // Eager load critical pages
 import Index from "./pages/Index";
-import Login from "./pages/Login";
+import { Navigate } from "react-router-dom";
 import NotFound from "./pages/NotFound";
 
 // Lazy load heavy pages for better performance
